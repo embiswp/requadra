@@ -135,6 +135,7 @@ The two fixes that resolved the multiplayer divergence:
 | `LegacyScoring.cs` | line-clear points, clean-board bonus | `canvas.cc` (`give_line`), `player.cc` (`check_clean`) |
 | `FallingPiece.cs` | one piece falling frame by frame from `Moves` bytes, speeds | `player.cc` (`Player_process_key::step`, `move_down`, `drop_down`, rotate and move functions), `canvas.cc` (`calc_speed`) |
 | `Input/KeyStates.cs`, `KeyBindings.cs`, `PieceController.cs` | keys to piece actions per frame, key repeat | `player.cc` (`Player_process_key::keyboard_control`), `canvas.cc` (`check_key`, `clear_key`, `unrelease_key`), `input.cc` |
+| `Game/SinglePlayerGame.cs` | the loop around a player: play the piece, stamp it, pause, next piece or game over | `player.cc` executors |
 | `PlayerSim.cs` | one player: piece queue, stamping, garbage queue, attacker bookkeeping, score, lines | `player.cc`, `canvas.cc` (`add_packet`) |
 | `Demos/DemoReplay.cs` | replays a demo through the above | `recording.cc` |
 
@@ -229,15 +230,54 @@ What the demos taught us:
 Not covered: the throttle in the C++ client that skips key handling when the game runs ahead of the
 display (it depends on video frame counters, and a fixed-timestep game does not need it); frames outside
 the piece's life (the pause before it appears, the line-clear animation), which belong to the game
-loop; wall kicks (see above); and the death check when a new piece appears on top of blocks.
+loop (see the next section); and wall kicks (see above).
+
+## Decisions taken
+
+| Question | Decision |
+|---|---|
+| Rule sets | **1.1 rules only** (net version 20). Newer rules have no recordings to verify them against. |
+| Wall kick | **None**, as in the 1.1.0 games in the demos. |
+| Key repeat against a wall | **1.1.0 behaviour** (steady rhythm). The current client's blocked-move retry stays available as an option. |
+
+## Death check, level-up and a playable client (fifth step)
+
+- **Death check** (`PlayerSim.SpawnBlocked`): a player dies when the piece that just appeared overlaps
+  blocks (`Player_normal::step`). Verified: all 33 recorded deaths in the four demos coincide with such a
+  spawn collision, and there is no spawn collision without a recorded death
+  (`DemoReplay` now reports `DeathMismatches`, zero for every player).
+- **Level-up** (`PlayerSim` with `levelUp: true`): the level rises when the lines cleared since the last
+  (re)start reach 15 times the level, and gravity follows the level. This is a port of
+  `Canvas::give_line`, but no bundled demo has level-up, so it is covered by unit tests built from the C++
+  rules only, not by recordings.
+- **Drop points** use the current C++ formula (`LegacyScoring.DropPoints`). It matches 87 % of the
+  recorded stamp scores; the 1.1.0 clients used a slightly different, unknown formula.
+- **`SinglePlayerGame`** wraps a `PlayerSim`: it steps the piece each frame, stamps it on landing, waits
+  2 frames (plus a fixed 20 while lines clear), then brings in the next piece or ends the game. The
+  original steps its logic every 10 ms, so a front end calls `Update()` 100 times a second. The line-clear
+  animation timing is an approximation (the original flashes about 17 frames and then lets cells fall one
+  row every other frame); it is not verified.
+- **`src/Quadra.Desktop`** is a first playable MonoGame (DesktopGL) client: fixed 100 Hz logic step,
+  keyboard to key-state events, smooth falling pieces, joined blocks, score, lines, level, three next
+  pieces, pause and game over. It draws with plain rectangles and a built-in 3x5 pixel font, so it needs no
+  art or content pipeline yet. It targets net8.0 with roll-forward, so it also runs on a newer installed
+  .NET.
+
+Checked here: the game logic by unit tests (including a bot that plays to game over), and the client by
+`dotnet run --project src/Quadra.Desktop -- --smoke 150`, which opens the window, plays by itself and
+exits; `--screenshot file.png` saves the last frame, and the output looked right. Nobody has played it
+by hand yet, so feel (key timing, speed, animation) is unchecked.
+
+Controls: Left / Right arrows, Down arrow (soft drop), Up arrow (rotate right), Z (rotate left), X (rotate
+twice), Space (drop), P (pause), Enter (new game after game over), Esc (quit).
 
 ## Suggested next steps
 
-1. Decide which rule sets the new game must support. The bundled demos only cover the 1.1 rules
-   (net version 20, survivor). Newer rules (net versions 23 and 24, blind and potato modes) have no
-   recorded demos, so they would need new test data, for example recorded by the C++ client.
-2. Decide the rules that need a design choice, not more porting: the spawn-collision death check,
-   a drop-points formula, wall kicks, and whether the new game keeps the 1.1.0 key-repeat behaviour
-   or the current client's blocked-move retry (both are supported).
-3. Start the MonoGame client on top of `Quadra.Core`.
-4. Android/iOS planning remains a separate task.
+1. Play the client and tune the feel: line-clear animation, speed per level, key timing.
+2. Replace the rectangles with the original art and sounds (`legacy/images`, `legacy/sons`), loaded from
+   plain PNG and WAV files instead of the old `quadra.res` archive.
+3. Menus and settings (key bindings, repeat speed), high scores, then the network game: the packet
+   decoder, the rules and the key layer are already in `Quadra.Core`; the server (Qserv) would be rebuilt
+   in ASP.NET Core.
+4. Android and iOS planning remains a separate task. Touch controls map naturally onto the key-state
+   layer (a button is a key id).

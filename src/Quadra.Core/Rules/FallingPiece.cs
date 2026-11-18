@@ -45,12 +45,13 @@ public readonly record struct PieceState(int Piece, int Column, int Row, int Rot
 /// </summary>
 public sealed class FallingPiece
 {
-    private const int SpawnColumn = 7;
-    private const int SpawnRow = 10;
+    /// <summary>Column and row where every piece appears.</summary>
+    public const int SpawnColumn = 7;
+    public const int SpawnRow = 10;
     private const int RowUnits = 18 << 4;
 
     private readonly Board _board;
-    private readonly int _gravity;
+    private int _gravity;
     private readonly int _softDrop;
     private int _y; // vertical position in sub-row units
 
@@ -60,6 +61,14 @@ public sealed class FallingPiece
         _gravity = gravity;
         _softDrop = softDrop;
     }
+
+    /// <summary>
+    /// Vertical position in sub-row units (288 per row, 0 at row 12), for smooth drawing between rows.
+    /// </summary>
+    public int Y => _y;
+
+    /// <summary>Changes how fast the piece falls, for a new level (<see cref="LegacySpeeds.Gravity"/>).</summary>
+    public void SetGravity(int gravity) => _gravity = gravity;
 
     public int Piece { get; private set; }
     public int Column { get; private set; }

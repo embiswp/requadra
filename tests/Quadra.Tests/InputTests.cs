@@ -66,7 +66,7 @@ public class PieceControllerTests
     }
 
     /// <summary>Puts a piece in a known state: the square (piece 0) is easy to reason about.</summary>
-    private static (PlayerSim Sim, KeyStates Keys) NewPlayerWithSquare(int horizontalRepeat = 2)
+    private static (PlayerSim Sim, KeyStates Keys) NewPlayerWithSquare(int horizontalRepeat = 2, bool retryBlockedMoves = false)
     {
         for (int seed = 0; seed < 1000; seed++)
         {
@@ -74,7 +74,7 @@ public class PieceControllerTests
             if (sim.CurrentPiece != 0)
                 continue;
             var keys = new KeyStates();
-            sim.AttachInput(keys, Bindings, horizontalRepeat);
+            sim.AttachInput(keys, Bindings, horizontalRepeat, retryBlockedMoves: retryBlockedMoves);
             return (sim, keys);
         }
         throw new InvalidOperationException("no seed starts with a square");
@@ -131,7 +131,7 @@ public class PieceControllerTests
     [Fact]
     public void A_held_left_key_repeats_after_thirteen_frames_then_every_three_and_every_frame_when_blocked()
     {
-        var (sim, keys) = NewPlayerWithSquare();
+        var (sim, keys) = NewPlayerWithSquare(retryBlockedMoves: true);   // the current C++ client's behaviour
         keys.Down(Left);
 
         var attempts = new List<int>();
@@ -147,28 +147,15 @@ public class PieceControllerTests
     [Fact]
     public void Without_the_blocked_retry_a_key_pushed_against_the_wall_keeps_the_normal_rhythm()
     {
-        // The 1.1.0 clients that recorded the bundled demos did not retry a blocked move next frame.
-        var sim = NewSquareWithoutRetry();
-        sim.Keys.Down(Left);
+        // The 1.1.0 clients that recorded the bundled demos did not retry a blocked move next frame;
+        // this is the default.
+        var (sim, keys) = NewPlayerWithSquare();
+        keys.Down(Left);
         var attempts = new List<int>();
         for (int frame = 0; frame < 30; frame++)
-            if ((sim.Sim.Frame().Moves & MoveFlags.Left) != 0)
+            if ((sim.Frame().Moves & MoveFlags.Left) != 0)
                 attempts.Add(frame);
         Assert.Equal([0, 13, 16, 19, 22, 25, 28], attempts);   // wall reached at 19, then every 3rd frame
-    }
-
-    private static (PlayerSim Sim, KeyStates Keys) NewSquareWithoutRetry()
-    {
-        for (int seed = 0; seed < 1000; seed++)
-        {
-            var sim = new PlayerSim(seed, 1);
-            if (sim.CurrentPiece != 0)
-                continue;
-            var keys = new KeyStates();
-            sim.AttachInput(keys, Bindings, 2, retryBlockedMoves: false);
-            return (sim, keys);
-        }
-        throw new InvalidOperationException("no seed starts with a square");
     }
 
     [Fact]
@@ -274,5 +261,32 @@ public class PieceControllerTests
     {
         var sim = new PlayerSim(1, 1);
         Assert.Throws<InvalidOperationException>(() => sim.Frame());
+    }
+}
+
+public class DeathCheckTests
+{
+    [Fact]
+    public void A_fresh_board_never_blocks_the_spawn()
+    {
+        for (int seed = 0; seed < 50; seed++)
+            Assert.False(new PlayerSim(seed, 1).SpawnBlocked);
+    }
+
+    [Fact]
+    public void A_piece_that_appears_on_top_of_blocks_means_death_and_cannot_be_played()
+    {
+        var sim = new PlayerSim(2014368, 1);
+        sim.AttachInput(new Quadra.Core.Input.KeyStates(), new Quadra.Core.Input.KeyBindings(1, 2, 3, 4, 5, 6, 7), 2);
+        // Fill the spawn area (rows 10-13, columns 6-10) directly, whatever the piece is.
+        for (int x = 4; x <= 13; x++)
+            for (int y = 10; y <= 13; y++)
+                sim.Board.Stamp(0, 0, x - 1, y - 1);   // squares tile the area
+        Assert.True(sim.SpawnBlocked);
+        Assert.Throws<InvalidOperationException>(() => sim.Frame());
+        sim.Die();
+        sim.Restart();
+        Assert.False(sim.SpawnBlocked);
+        sim.Frame();
     }
 }

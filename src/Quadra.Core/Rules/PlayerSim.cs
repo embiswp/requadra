@@ -21,7 +21,9 @@ public sealed class PlayerSim
     private const int MaxPendingGarbage = 20;
 
     private readonly LegacyRandom _random;
-    private readonly int _level;
+    private readonly int _startLevel;
+    private readonly bool _levelUp;
+    private int _level;
     // [0] current piece, [1..3] the three upcoming ones, -1 = empty (as in Canvas::bloc/next*)
     private readonly int[] _queue = [-1, -1, -1, -1];
     private readonly int[] _attacks = new int[MaxPlayers];
@@ -31,12 +33,18 @@ public sealed class PlayerSim
     private PieceController? _input;
 
     /// <param name="gameSeed">Seed from the game packet.</param>
-    /// <param name="level">Level the game starts at (no level-up is supported).</param>
+    /// <param name="level">Level the game starts at.</param>
     /// <param name="verticalRepeat">The player's vertical repeat setting (0-3), which sets the soft-drop speed.</param>
-    public PlayerSim(int gameSeed, int level, int verticalRepeat = 2)
+    /// <param name="levelUp">
+    /// Single-player games raise the level every 15 lines (the rule is a port of <c>Canvas::give_line</c>
+    /// and is not covered by the bundled demos, which are all without level-up).
+    /// </param>
+    public PlayerSim(int gameSeed, int level, int verticalRepeat = 2, bool levelUp = false)
     {
         _random = new LegacyRandom(gameSeed);
+        _startLevel = level;
         _level = level;
+        _levelUp = levelUp;
         _falling = new FallingPiece(Board, LegacySpeeds.Gravity(level), LegacySpeeds.SoftDrop(verticalRepeat));
         Restart();
     }
@@ -44,6 +52,15 @@ public sealed class PlayerSim
     public Board Board { get; } = new();
     public int Score { get; private set; }
     public int Lines { get; private set; }
+
+    /// <summary>Current level; it only rises when level-up is on.</summary>
+    public int Level => _level;
+
+    /// <summary>Lines cleared since the last (re)start; the level rises when this reaches 15 times the level.</summary>
+    public int LinesThisRun { get; private set; }
+
+    /// <summary>The three pieces that will appear after the current one, soonest first.</summary>
+    public IReadOnlyList<int> Upcoming => [_queue[1], _queue[2], _queue[3]];
     public int Stamps { get; private set; }
     public int InvalidStamps { get; private set; }
     public int Deaths { get; private set; }
@@ -67,6 +84,14 @@ public sealed class PlayerSim
     public int CurrentPiece => _queue[0];
 
     /// <summary>
+    /// True when the piece that just appeared overlaps blocks, which is how a player dies
+    /// (<c>Player_normal::step</c>). Checked after every stamp; it matched all 33 recorded deaths
+    /// in the bundled demos. The caller then calls <see cref="Die"/>.
+    /// </summary>
+    public bool SpawnBlocked =>
+        Board.Collides(_queue[0], 0, FallingPiece.SpawnColumn, FallingPiece.SpawnRow);
+
+    /// <summary>
     /// Empties the board, the attack bookkeeping and the pending garbage, and draws a fresh queue.
     /// Called when the player starts and on respawn; the generator itself is not reset, so the
     /// sequence carries on. Garbage that arrived while dead is dropped here: the C++ client
@@ -75,6 +100,9 @@ public sealed class PlayerSim
     public void Restart()
     {
         Board.Reset();
+        _level = _startLevel;
+        _falling.SetGravity(LegacySpeeds.Gravity(_level));
+        LinesThisRun = 0;
         Array.Fill(_queue, -1);
         Array.Clear(_attacks);
         LastAttacker = NoAttacker;
@@ -93,7 +121,7 @@ public sealed class PlayerSim
     /// Lets <see cref="Frame"/> drive the piece from key states (for a player at the keyboard).
     /// </summary>
     /// <param name="horizontalRepeat">The player's horizontal repeat setting (0-3).</param>
-    public void AttachInput(KeyStates keys, KeyBindings bindings, int horizontalRepeat, bool continuousDown = true, bool retryBlockedMoves = true)
+    public void AttachInput(KeyStates keys, KeyBindings bindings, int horizontalRepeat, bool continuousDown = true, bool retryBlockedMoves = false)
     {
         _input = new PieceController(_falling, keys, bindings, LegacySpeeds.RepeatDelay(horizontalRepeat), continuousDown, retryBlockedMoves);
         _input.BeginPiece();
@@ -107,6 +135,8 @@ public sealed class PlayerSim
     {
         if (_input is null)
             throw new InvalidOperationException("No input attached; call AttachInput first.");
+        if (SpawnBlocked && _falling.Frames == 0)
+            throw new InvalidOperationException("The piece appeared on top of blocks; the player is dead (see Die).");
         if (Landed is not null)
         {
             MovesAfterLanding++;
@@ -244,6 +274,12 @@ public sealed class PlayerSim
         {
             Score += LegacyScoring.Clear(lines, combo, _level);
             Lines += lines;
+            LinesThisRun += lines;
+            if (_levelUp && LinesThisRun >= _level * 15)
+            {
+                _level++;
+                _falling.SetGravity(LegacySpeeds.Gravity(_level));
+            }
         }
         return lines;
     }

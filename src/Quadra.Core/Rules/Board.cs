@@ -46,6 +46,13 @@ public sealed class Board
             }
     }
 
+    /// <summary>Occupies one cell without a piece (used by tests to set up positions).</summary>
+    internal void Fill(int row, int column)
+    {
+        _occupied[row, column] = true;
+        _cell[row, column] = 0;
+    }
+
     public bool Collides(int piece, int rotation, int x, int y)
     {
         for (int j = 0; j < 4; j++)

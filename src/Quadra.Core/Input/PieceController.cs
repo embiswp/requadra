@@ -23,8 +23,9 @@ public readonly record struct ControllerState(int HoldLeft, int HoldRight);
 /// <item>Drop acts once on key-down.</item>
 /// <item>Left and Right act at once, then repeat after <c>delay + 10</c> frames and every
 /// <c>delay</c> frames after that. Pressing both cancels both. The repeat starts over for every
-/// new piece. In the current C++ client a move that is blocked is retried on the next frame
-/// (<c>retryBlockedMoves</c>); the 1.1.0 clients that recorded the bundled demos did not do that.</item>
+/// new piece. The current C++ client retries a blocked move on the next frame
+/// (<c>retryBlockedMoves</c>); the 1.1.0 clients that recorded the bundled demos did not, and neither
+/// does this by default.</item>
 /// </list>
 /// Frames that do not belong to the piece (the pause before it appears, the line-clear animation) are
 /// the game loop's business: call <see cref="Frame"/> only for frames where the piece is in play.
@@ -44,7 +45,7 @@ public sealed class PieceController
     /// <param name="continuousDown">When false, a down key still held from the previous piece is ignored for the new one.</param>
     /// <param name="retryBlockedMoves">When true, a blocked left or right move is tried again on the next frame (current C++ client).</param>
     public PieceController(FallingPiece piece, KeyStates keys, KeyBindings bindings, int repeatDelay,
-        bool continuousDown = true, bool retryBlockedMoves = true)
+        bool continuousDown = true, bool retryBlockedMoves = false)
     {
         _piece = piece;
         _keys = keys;

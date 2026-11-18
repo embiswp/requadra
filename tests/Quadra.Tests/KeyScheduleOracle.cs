@@ -174,7 +174,7 @@ internal static class KeyScheduleOracle
                     names[p.Pos] = p.Name;
                     var sim = new PlayerSim(gs.GameSeed, gs.LevelStart, p.VRepeat);
                     keys[p.Pos] = new KeyStates();
-                    sim.AttachInput(keys[p.Pos], Bindings, p.HRepeat, retryBlockedMoves: false); // 1.1.0 clients
+                    sim.AttachInput(keys[p.Pos], Bindings, p.HRepeat); // 1.1.0 behaviour is the default
                     sims[p.Pos] = sim;
                     frags[p.Pos] = 0;
                     break;
@@ -206,7 +206,7 @@ internal static class KeyScheduleOracle
 
         var players = sims
             .Select(kv => new PlayerReplay(kv.Key, names[kv.Key], kv.Value.Score, kv.Value.Lines, frags[kv.Key],
-                kv.Value.Deaths, kv.Value.Stamps, kv.Value.InvalidStamps, 0, kv.Value.MovesAfterLanding))
+                kv.Value.Deaths, kv.Value.Stamps, kv.Value.InvalidStamps, 0, kv.Value.MovesAfterLanding, 0))
             .ToList();
         return (players, stats);
     }

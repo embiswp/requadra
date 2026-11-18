@@ -373,6 +373,18 @@ public class ReplayTests
         Assert.True(auto * 10 > attempts * 6, $"only {auto} of {attempts} direction moves were produced by key repeat");
     }
 
+    [Theory]
+    [InlineData("demo00.rec", 7)]
+    [InlineData("demo01.rec", 8)]
+    [InlineData("demo02.rec", 0)]
+    [InlineData("demo03.rec", 18)]
+    public void A_player_dies_exactly_when_the_new_piece_appears_on_top_of_blocks(string name, int recordedDeaths)
+    {
+        var players = DemoReplay.Run(DemoFile.Load(DemoPath(name)));
+        Assert.Equal(recordedDeaths, players.Sum(p => p.Deaths));
+        Assert.All(players, p => Assert.Equal(0, p.DeathMismatches));
+    }
+
     [Fact]
     public void Single_player_demo_matches_the_known_figures()
     {
