@@ -31,10 +31,7 @@ foreach (var path in args)
     }
 
     foreach (var r in DemoReplay.Run(demo))
-    {
-        string expected = r.ExpectedExact ? "expected exact" : $"{r.GarbagePacketsIgnored} garbage packets not applied";
-        Console.WriteLine($"  replay {r.Name,-8} score {r.Score,7}  lines {r.Lines,3}  invalid stamps {r.InvalidStamps,3}  ({expected})");
-    }
+        Console.WriteLine($"  replay {r.Name,-8} score {r.Score,7}  lines {r.Lines,3}  frags {r.Frags,2}  deaths {r.Deaths,2}  invalid stamps {r.InvalidStamps}");
 
     foreach (var g in demo.Packets.GroupBy(d => d.Packet.Type).OrderBy(g => (int)g.Key))
         Console.WriteLine($"    {g.Key,-14} {g.Count()}");

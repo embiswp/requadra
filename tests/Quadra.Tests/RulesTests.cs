@@ -122,6 +122,67 @@ public class ScoringTests
         Assert.Equal(expected, LegacyScoring.Clear(lines, combo, level));
 }
 
+public class GarbageTests
+{
+    [Theory]
+    // count, complexity, column -> hole columns. Values below were all seen in the bundled demos.
+    [InlineData(3, 4, 9, new[] { 12, 5, 8 })]
+    [InlineData(1, 1, 11, new[] { 11 })]
+    [InlineData(2, 3, 12, new[] { 4, 6 })]
+    public void Holes_are_placed_like_the_C_client(int count, int complexity, int column, int[] expected)
+    {
+        var sim = new PlayerSim(1, 1);
+        sim.ReceiveLines(0, count, complexity, column);
+        Assert.Equal(expected, sim.PendingGarbage);
+    }
+
+    [Fact]
+    public void At_most_twenty_garbage_rows_are_queued()
+    {
+        var sim = new PlayerSim(1, 1);
+        sim.ReceiveLines(0, 15, 1, 8);
+        sim.ReceiveLines(0, 15, 1, 8);
+        Assert.Equal(20, sim.PendingGarbage.Count);
+    }
+
+    [Fact]
+    public void Garbage_is_credited_to_the_biggest_recent_attacker()
+    {
+        var sim = new PlayerSim(1, 1);
+        sim.ReceiveLines(2, 1, 1, 8);
+        Assert.Equal(2, sim.LastAttacker);
+        sim.ReceiveLines(5, 3, 1, 8);
+        Assert.Equal(5, sim.LastAttacker);
+        sim.ReceiveLines(2, 1, 1, 8);   // 4 total for 2, still behind 6 for 5
+        Assert.Equal(5, sim.LastAttacker);
+        Assert.Equal(5, sim.Die());
+        Assert.Empty(sim.PendingGarbage);
+    }
+
+    [Fact]
+    public void Restart_drops_garbage_that_arrived_while_dead()
+    {
+        var sim = new PlayerSim(1, 1);
+        sim.ReceiveLines(0, 2, 1, 8);
+        sim.Restart();
+        Assert.Empty(sim.PendingGarbage);
+        Assert.Equal(PlayerSim.NoAttacker, sim.LastAttacker);
+    }
+
+    [Fact]
+    public void A_garbage_row_pushes_the_board_up_and_leaves_one_hole()
+    {
+        var b = new Board();
+        b.Stamp(5, 0, 4, 30);               // I piece on the floor row, columns 4-7
+        b.AddGarbage([8]);
+
+        for (int i = Board.FirstColumn; i < Board.EndColumn; i++)
+            Assert.Equal(i != 8, b.IsOccupied(31, i));
+        for (int i = 4; i <= 7; i++)
+            Assert.True(b.IsOccupied(30, i), $"column {i} was pushed up one row");
+    }
+}
+
 public class ReplayTests
 {
     private static string DemoPath(string name)
@@ -135,36 +196,56 @@ public class ReplayTests
         throw new FileNotFoundException(name);
     }
 
-    [Fact]
-    public void Single_player_demo_reproduces_the_recorded_score_and_lines_exactly()
-    {
-        var demo = DemoFile.Load(DemoPath("demo02.rec"));
-        var player = Assert.Single(DemoReplay.Run(demo));
-
-        Assert.True(player.ExpectedExact);
-        Assert.Equal(0, player.InvalidStamps);
-        Assert.Equal(49, player.Stamps);
-        Assert.Equal(int.Parse(demo.Summary["players/0/score"]), player.Score);
-        Assert.Equal(int.Parse(demo.Summary["players/0/lines"]), player.Lines);
-        Assert.Equal(54826, player.Score);
-        Assert.Equal(18, player.Lines);
-    }
-
     [Theory]
     [InlineData("demo00.rec")]
     [InlineData("demo01.rec")]
+    [InlineData("demo02.rec")]
     [InlineData("demo03.rec")]
-    public void Multiplayer_demos_run_and_flag_players_hit_by_garbage_as_not_exact(string name)
+    public void Replay_reproduces_every_players_recorded_score_lines_frags_and_deaths(string name)
     {
         var demo = DemoFile.Load(DemoPath(name));
         var players = DemoReplay.Run(demo);
-        Assert.Equal(4, players.Count);
-        // Garbage rows are not ported, so every player who received some is marked not exact.
-        Assert.Contains(players, p => !p.ExpectedExact);
-        foreach (var p in players.Where(p => p.ExpectedExact))
+        int expectedCount = demo.Summary.Keys.Count(k => k.StartsWith("players/") && k.EndsWith("/name"));
+        Assert.Equal(expectedCount, players.Count);
+
+        foreach (var p in players)
         {
             int i = Enumerable.Range(0, 8).First(n => demo.Summary.GetValueOrDefault($"players/{n}/name") == p.Name);
-            Assert.Equal(int.Parse(demo.Summary[$"players/{i}/score"]), p.Score);
+            string prefix = $"players/{i}/";
+            Assert.Equal(0, p.InvalidStamps);
+            Assert.Equal(int.Parse(demo.Summary[prefix + "score"]), p.Score);
+            Assert.Equal(int.Parse(demo.Summary[prefix + "lines"]), p.Lines);
+            Assert.Equal(int.Parse(demo.Summary[prefix + "frags"]), p.Frags);
+            Assert.Equal(int.Parse(demo.Summary[prefix + "deaths"]), p.Deaths);
+        }
+    }
+
+    [Fact]
+    public void Single_player_demo_matches_the_known_figures()
+    {
+        var player = Assert.Single(DemoReplay.Run(DemoFile.Load(DemoPath("demo02.rec"))));
+        Assert.Equal(54826, player.Score);
+        Assert.Equal(18, player.Lines);
+        Assert.Equal(49, player.Stamps);
+    }
+
+    [Fact]
+    public void Rules_that_are_not_ported_are_refused_instead_of_replayed_wrongly()
+    {
+        var demo = DemoFile.Load(DemoPath("demo02.rec"));
+        var newer = new DemoFileWithVersion(demo, 23);
+        Assert.Throws<NotSupportedException>(() => DemoReplay.Run(newer.Demo));
+    }
+
+    // Builds a demo whose game packet claims a different net version.
+    private sealed class DemoFileWithVersion
+    {
+        public DemoFile Demo { get; }
+
+        public DemoFileWithVersion(DemoFile source, byte version)
+        {
+            var gs = source.GameServer! with { Version = version };
+            Demo = DemoFile.FromParts(gs, source.Packets, source.Summary);
         }
     }
 }

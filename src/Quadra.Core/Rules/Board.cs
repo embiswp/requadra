@@ -141,6 +141,65 @@ public sealed class Board
         }
     }
 
+    /// <summary>
+    /// Pushes the whole playfield up by one row for each entry and fills the bottom row, leaving a
+    /// hole at that column (<c>Player_add_bonus::step</c>, net versions below 23), then lets
+    /// anything left unsupported fall.
+    /// </summary>
+    /// <param name="holeColumns">Hole column (4-13) of each garbage row, oldest first.</param>
+    public void AddGarbage(IReadOnlyList<int> holeColumns)
+    {
+        bool firstDone = false;
+        foreach (int column in holeColumns)
+        {
+            for (int j = 0; j < Rows - 1; j++)
+                for (int i = FirstColumn; i < EndColumn; i++)
+                {
+                    _cell[j, i] = _cell[j + 1, i];
+                    _occupied[j, i] = _occupied[j + 1, i];
+                }
+
+            int hole = 1 << (9 - (column - FirstColumn));
+            const int last = Rows - 1;
+            for (int i = FirstColumn; i < EndColumn; i++)
+            {
+                _cell[last, i] = 2 | 8;
+                _occupied[last, i] = true;
+            }
+
+            for (int i = FirstColumn; i < EndColumn; i++)
+            {
+                if ((hole & 512) != 0)
+                {
+                    _cell[last, i] = 0;
+                    _occupied[last, i] = false;
+                    if (firstDone && _occupied[last - 1, i])
+                        _cell[last - 1, i] |= 8;
+                    if (i > FirstColumn)
+                    {
+                        if (_occupied[last, i - 1])
+                            _cell[last, i - 1] |= 4;
+                        if (_occupied[last, FirstColumn])
+                            _cell[last, FirstColumn] |= 1;
+                    }
+                    _cell[last, i + 1] |= 1;
+                    _cell[last, EndColumn] |= 4;
+                }
+                else if (firstDone && !_occupied[last - 1, i])
+                {
+                    _cell[last, i] |= 2;
+                }
+                hole = (hole << 1) & 0xFFFF;
+            }
+            firstDone = true;
+        }
+
+        for (int i = FirstColumn; i < EndColumn; i++)
+            if (_occupied[0, i])
+                _cell[0, i] |= 2; // clip the top
+        DropUnsupported();
+    }
+
     private void ClearSupport()
     {
         for (int j = 0; j < Rows; j++)

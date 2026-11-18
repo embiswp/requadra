@@ -4,18 +4,11 @@ using Quadra.Core.Rules;
 namespace Quadra.Core.Demos;
 
 /// <summary>What the rules produced for one player of a replayed demo.</summary>
-public sealed record PlayerReplay(byte Slot, string Name, int Score, int Lines, int Stamps, int InvalidStamps, int GarbagePacketsIgnored)
-{
-    /// <summary>
-    /// True when nothing the replay left out can have affected this player, so score and lines
-    /// are expected to equal the demo's summary.
-    /// </summary>
-    public bool ExpectedExact => GarbagePacketsIgnored == 0;
-}
+public sealed record PlayerReplay(byte Slot, string Name, int Score, int Lines, int Frags, int Deaths, int Stamps, int InvalidStamps);
 
 /// <summary>
-/// Replays a demo through the C# rules (<see cref="PlayerSim"/>). Not covered yet: garbage rows
-/// sent by opponents (<see cref="LinesPacket"/>), net versions from 23, and level-up games.
+/// Replays a demo through the C# rules (<see cref="PlayerSim"/>). The figures can be compared with
+/// the summary stored in the demo. Supported: net versions below 23, survivor games, no level-up.
 /// </summary>
 public static class DemoReplay
 {
@@ -26,31 +19,44 @@ public static class DemoReplay
             throw new NotSupportedException($"Net version {gs.Version} rules are not ported yet.");
         if (!gs.NoLevelUp)
             throw new NotSupportedException("Games with level-up are not ported yet.");
+        if (!gs.Survivor)
+            throw new NotSupportedException("Games without survivor rules are not ported yet.");
 
-        var sims = new SortedDictionary<byte, (string Name, PlayerSim Sim, int Garbage)>();
+        var names = new Dictionary<byte, string>();
+        var sims = new SortedDictionary<byte, PlayerSim>();
+        var frags = new Dictionary<byte, int>();
 
         foreach (var (_, packet) in demo.Packets)
         {
             switch (packet)
             {
                 case PlayerPacket p:
-                    sims[p.Pos] = (p.Name, new PlayerSim(gs.GameSeed, gs.LevelStart), 0);
+                    names[p.Pos] = p.Name;
+                    sims[p.Pos] = new PlayerSim(gs.GameSeed, gs.LevelStart);
+                    frags[p.Pos] = 0;
                     break;
-                case StampBlockPacket s when sims.TryGetValue(s.Slot, out var entry):
-                    entry.Sim.Stamp(s.X, s.Y, s.Rotate, s.Score);
+                case StampBlockPacket s when sims.TryGetValue(s.Slot, out var sim):
+                    sim.Stamp(s.X, s.Y, s.Rotate, s.Score);
                     break;
-                case RespawnPacket r when sims.TryGetValue(r.Slot, out var entry):
-                    entry.Sim.Restart();
+                case RespawnPacket r when sims.TryGetValue(r.Slot, out var sim):
+                    sim.Restart();
                     break;
-                case LinesPacket l when l.Sender != 255 && l.Nb > 0 && sims.TryGetValue(l.Slot, out var entry):
-                    sims[l.Slot] = entry with { Garbage = entry.Garbage + 1 };
+                case LinesPacket l when l.Sender != PlayerSim.NoAttacker && sims.ContainsKey(l.Sender)
+                                        && sims.TryGetValue(l.Slot, out var sim):
+                    if (l.Attack.Type != AttackType.None)
+                        sim.ReceiveLines(l.Sender, l.Nb, l.Nc, l.Lx);
+                    break;
+                case DeadPacket d when sims.TryGetValue(d.Slot, out var sim):
+                    int fragger = sim.Die();
+                    if (fragger != PlayerSim.NoAttacker && frags.ContainsKey((byte)fragger))
+                        frags[(byte)fragger]++;
                     break;
             }
         }
 
         return sims
-            .Select(kv => new PlayerReplay(kv.Key, kv.Value.Name, kv.Value.Sim.Score, kv.Value.Sim.Lines,
-                kv.Value.Sim.Stamps, kv.Value.Sim.InvalidStamps, kv.Value.Garbage))
+            .Select(kv => new PlayerReplay(kv.Key, names[kv.Key], kv.Value.Score, kv.Value.Lines, frags[kv.Key],
+                kv.Value.Deaths, kv.Value.Stamps, kv.Value.InvalidStamps))
             .ToList();
     }
 }

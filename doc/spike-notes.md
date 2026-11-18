@@ -62,8 +62,9 @@ Example output (`demo00.rec`): 1637 packets, 4 players, deaths 1/3/2/1 and
 3. **Scores and lines are not in the packets.** The summary's per-player `score`, `lines`,
    and `frags` come from the client-side simulation. In the C++ code this is the `Canvas` and
    its executors (`give_line`, stamping, combo and clean-bonus scoring, level-up, garbage
-   lines). The demos therefore cannot yet be used to check score and lines, which is the real
-   regression test for the game rules. This was not attempted in the spike.
+   lines). The packet-level pass alone cannot check score and lines, which is the real
+   regression test for the game rules. The later steps below add that rule replay, and it
+   now matches all four demos.
 4. **The simulation is not trivial to isolate.** For example, `Canvas::give_line` mixes
    scoring with logging, network sending, chat messages and on-screen text, so it must be
    split into pure rules before it can be ported.
@@ -74,7 +75,6 @@ Example output (`demo00.rec`): 1637 packets, 4 players, deaths 1/3/2/1 and
 
 ## Not verified
 
-- Frag counts. The summary's `frags` need the attacker bookkeeping from the simulation.
 - The semantics of the `Moves` key bits and the `State` values are not decoded yet.
 - Packet types that do not appear in the demos (for example `Download`, `Stat`) are not
   ported.
@@ -105,25 +105,23 @@ How the C++ code produces the numbers (all net version 20 rules):
 - **Frags** come from the `attacks`/`last_attacker` bookkeeping on `Lines` packets and are counted
   on `Dead` packets.
 
-Prototype results (summary score and lines vs. replay):
+Prototype results (summary score, lines and frags vs. replay):
 
-| Demo | Result |
+| Stage | Result |
 |---|---|
-| `demo02` (single player, no garbage) | **Exact**: score 54826 and 18 lines, all 49 stamps valid |
-| all four demos, frags | **Exact for all 13 players** |
-| `demo00` Jeps, `demo01` Dada | Exact or valid stamps with garbage-first ordering |
-| other multiplayer players | Diverge at some point (about 2 of 13 players match fully) |
+| `demo02` (single player, no garbage) | **Exact** from the first run: score 54826, 18 lines, all 49 stamps valid |
+| first multiplayer attempt | frags exact for all 13 players; scores and lines diverged for most |
+| after the two fixes below | **Exact for all 13 players in all four demos** (score, lines, frags, zero invalid stamps) |
 
-The single-player match shows the piece generator, piece table, gravity and scoring are correct.
-All 49 stamps being physically valid is only possible if the sequence is reproduced exactly.
-Multiplayer divergence is limited to garbage handling. Pending garbage on death was tried both
-ways and was not the cause. Remaining suspects: timing of when a `Lines` packet takes effect
-relative to the recorded frame, the exact bookkeeping in `Player_add_bonus` (side-bit edits near
-the hole), and respawn handling. This is not yet resolved, so exact multiplayer replay is
-unproven.
+The two fixes that resolved the multiplayer divergence:
 
-Cost estimate: the rules are about 400 lines of pure logic once separated from the UI, so the
-port itself is moderate. The open risk is the multiplayer garbage details above.
+1. **Three modules, not two, run after a stamp that has garbage pending.** `Player_stamp::init`
+   calls line check, garbage, line check. The executor is a stack, so they run in the order
+   *line check, garbage, line check* (the second check can clear rows the garbage completed).
+2. **Garbage that arrives while a player is dead is applied to the dead board**, which the respawn
+   then wipes. It must not carry over onto the fresh board. This was found by tracing the first
+   invalid stamp of one player: garbage received between its death and respawn was being applied
+   to its new board.
 
 ## Ported rules (second step)
 
@@ -133,27 +131,27 @@ port itself is moderate. The open risk is the multiplayer garbage details above.
 |---|---|---|
 | `LegacyRandom.cs` | piece generator (net versions below 23) | `random.cc` |
 | `Pieces.cs` | the 7 pieces in 4 rotations (generated from the C++ table) | `bloc.cc` |
-| `Board.cs` | playfield, placement checks, row clearing, support/gravity pass | `canvas.cc`, `player.cc` (`check_nb_line`, `Player_check_link`) |
+| `Board.cs` | playfield, placement checks, row clearing, support/gravity pass, garbage rows | `canvas.cc`, `player.cc` (`check_nb_line`, `Player_check_link`, `Player_add_bonus`) |
 | `LegacyScoring.cs` | line-clear points, clean-board bonus | `canvas.cc` (`give_line`), `player.cc` (`check_clean`) |
-| `PlayerSim.cs` | one player: piece queue, stamping, score, lines | `player.cc` |
+| `PlayerSim.cs` | one player: piece queue, stamping, garbage queue, attacker bookkeeping, score, lines | `player.cc`, `canvas.cc` (`add_packet`) |
 | `Demos/DemoReplay.cs` | replays a demo through the above | `recording.cc` |
 
-Test result: **`demo02` (single player) reproduces the recorded score (54826) and lines (18) exactly**,
-with all 49 stamps valid. The replay marks each player as `ExpectedExact` only if no garbage
-rows were sent to them. Multiplayer players who were hit by garbage are not expected to match yet.
-It throws `NotSupportedException` for net versions from 23 and for games with level-up, because
-those rules are not ported.
+Test result: **all four demos replay exactly in C#.** For every player the replayed score,
+lines, frags and deaths equal the stored summary and no stamp is invalid (13 players, about
+1500 stamps). `DemoReplay` throws `NotSupportedException` for rule sets that are not ported, instead of
+replaying them wrongly: net versions from 23, games with level-up, and games without survivor rules.
 
-Not ported: garbage rows (`Lines` packets), the frag bookkeeping, level-up, net version 23+ rules.
+Not ported: level-up, non-survivor frag rules, net version 23+ rules (new complexity and clean
+bonus, blind attacks), hot potato, handicap effects on sent lines. None of these are exercised by
+the bundled demos, so they cannot be verified here.
 
 ## Suggested next steps
 
-1. Resolve the multiplayer garbage divergence (see the feasibility section), then port garbage
-   handling (`Canvas::add_packet`, `Player_add_bonus`) so the three multiplayer demos can be
-   verified too.
-2. Port the frag bookkeeping (`attacks`, `last_attacker`); the prototype already matched all
-   frag counts.
-3. Compare `score`, `lines` and `frags` with each demo's summary. If all four demos match, the
-   rules port is verified.
-4. Only then start the MonoGame client on top of `Quadra.Core`.
-5. Android/iOS planning remains a separate task.
+1. Decide which rule sets the new game must support. The bundled demos only cover the 1.1 rules
+   (net version 20, survivor). Newer rules (net versions 23 and 24, blind and potato modes) have no
+   recorded demos, so they would need new test data, for example recorded by the C++ client.
+2. Move the replay from "consume final placements" to "simulate falling pieces from key presses"
+   (`Moves` packets), which is what a playable game needs. The final placements in the stamp
+   packets make a good check for that simulation.
+3. Start the MonoGame client on top of `Quadra.Core`.
+4. Android/iOS planning remains a separate task.

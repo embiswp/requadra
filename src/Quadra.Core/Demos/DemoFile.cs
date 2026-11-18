@@ -30,6 +30,11 @@ public sealed class DemoFile
 
     public int UncompressedSize { get; private set; }
 
+    /// <summary>Builds a demo from already decoded parts (used by tests and tools).</summary>
+    public static DemoFile FromParts(GameServerPacket gameServer, IReadOnlyList<DemoPacket> packets,
+        IReadOnlyDictionary<string, string> summary) =>
+        new() { GameServer = gameServer, Packets = packets, Summary = summary };
+
     public static DemoFile Load(string path) => Parse(File.ReadAllBytes(path));
 
     public static DemoFile Parse(byte[] file)
