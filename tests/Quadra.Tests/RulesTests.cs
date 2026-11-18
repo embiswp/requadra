@@ -183,6 +183,94 @@ public class GarbageTests
     }
 }
 
+public class FallingPieceTests
+{
+    private static FallingPiece NewPiece(Board board, int piece, int level = 1, int verticalRepeat = 2)
+    {
+        var p = new FallingPiece(board, LegacySpeeds.Gravity(level), LegacySpeeds.SoftDrop(verticalRepeat));
+        p.Spawn(piece);
+        return p;
+    }
+
+    [Theory]
+    [InlineData(1, 4)]
+    [InlineData(2, 9)]
+    [InlineData(10, 49)]
+    [InlineData(11, 53)]
+    public void Gravity_grows_with_level(int level, int expected) => Assert.Equal(expected, LegacySpeeds.Gravity(level));
+
+    [Theory]
+    [InlineData(0, 30)]
+    [InlineData(1, 56)]
+    [InlineData(2, 113)]
+    [InlineData(3, 180)]
+    public void Soft_drop_speed_depends_on_the_repeat_setting(int repeat, int expected) =>
+        Assert.Equal(expected, LegacySpeeds.SoftDrop(repeat));
+
+    [Fact]
+    public void A_new_piece_starts_in_the_spawn_position()
+    {
+        var piece = NewPiece(new Board(), 2);
+        Assert.Equal((7, 10, 0, 0), (piece.Column, piece.Row, piece.Rotation, piece.Frames));
+    }
+
+    [Fact]
+    public void Every_piece_falls_straight_down_and_lands_on_an_empty_board()
+    {
+        for (int q = 0; q < Pieces.Count; q++)
+        {
+            var board = new Board();
+            var piece = NewPiece(board, q);
+            Placement? landed = null;
+            for (int frame = 0; frame < 5000 && landed is null; frame++)
+                landed = piece.Step(MoveFlags.None);
+
+            Assert.NotNull(landed);
+            Assert.Equal(7, landed!.Value.X);
+            Assert.Equal(0, landed.Value.Rotation);
+            Assert.True(board.IsValidPlacement(q, 0, landed.Value.X, landed.Value.Y), $"piece {q}");
+        }
+    }
+
+    [Fact]
+    public void Hard_drop_moves_the_piece_to_its_resting_row()
+    {
+        var board = new Board();
+        var piece = NewPiece(board, 5);          // horizontal I: its cells are in row 1 of the box
+        piece.Step(MoveFlags.Drop);
+        Assert.Equal(30, piece.Row);
+        Assert.True(board.IsValidPlacement(5, 0, piece.Column, piece.Row));
+    }
+
+    [Fact]
+    public void Pieces_move_sideways_until_they_hit_the_wall()
+    {
+        var board = new Board();
+        var piece = NewPiece(board, 0);          // square: cells in columns 1-2 of the box
+        piece.Step(MoveFlags.Left);
+        Assert.Equal(6, piece.Column);
+        for (int n = 0; n < 20; n++)
+            piece.Step(MoveFlags.Left);
+        Assert.Equal(3, piece.Column);           // leftmost cell on column 4
+        for (int n = 0; n < 20; n++)
+            piece.Step(MoveFlags.Right);
+        Assert.Equal(11, piece.Column);          // rightmost cell on column 13
+    }
+
+    [Fact]
+    public void Rotation_changes_the_orientation_and_wraps()
+    {
+        var piece = NewPiece(new Board(), 3);
+        piece.Step(MoveFlags.RotateRight);
+        Assert.Equal(1, piece.Rotation);
+        piece.Step(MoveFlags.RotateLeft);
+        piece.Step(MoveFlags.RotateLeft);
+        Assert.Equal(3, piece.Rotation);
+        piece.Step(MoveFlags.RotateTwice);
+        Assert.Equal(1, piece.Rotation);
+    }
+}
+
 public class ReplayTests
 {
     private static string DemoPath(string name)
@@ -218,6 +306,29 @@ public class ReplayTests
             Assert.Equal(int.Parse(demo.Summary[prefix + "frags"]), p.Frags);
             Assert.Equal(int.Parse(demo.Summary[prefix + "deaths"]), p.Deaths);
         }
+    }
+
+    [Theory]
+    [InlineData("demo00.rec")]
+    [InlineData("demo01.rec")]
+    [InlineData("demo02.rec")]
+    [InlineData("demo03.rec")]
+    public void Playing_the_moves_lands_every_piece_exactly_where_its_stamp_packet_says(string name)
+    {
+        var demo = DemoFile.Load(DemoPath(name));
+        var players = DemoReplay.Run(demo, ReplayInput.Moves);
+
+        foreach (var p in players)
+        {
+            Assert.True(p.Stamps > 0);
+            Assert.Equal(0, p.LandingMismatches);
+            Assert.Equal(0, p.MovesAfterLanding);
+
+            int i = Enumerable.Range(0, 8).First(n => demo.Summary.GetValueOrDefault($"players/{n}/name") == p.Name);
+            Assert.Equal(int.Parse(demo.Summary[$"players/{i}/score"]), p.Score);
+            Assert.Equal(int.Parse(demo.Summary[$"players/{i}/lines"]), p.Lines);
+        }
+        Assert.Equal(demo.Packets.Count(d => d.Packet is Quadra.Core.Net.StampBlockPacket), players.Sum(p => p.Stamps));
     }
 
     [Fact]

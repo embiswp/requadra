@@ -22,10 +22,16 @@ public sealed class PlayerSim
     private readonly int[] _attacks = new int[MaxPlayers];
     private readonly List<int> _pendingGarbage = [];
 
-    public PlayerSim(int gameSeed, int level)
+    private readonly FallingPiece _falling;
+
+    /// <param name="gameSeed">Seed from the game packet.</param>
+    /// <param name="level">Level the game starts at (no level-up is supported).</param>
+    /// <param name="verticalRepeat">The player's vertical repeat setting (0-3), which sets the soft-drop speed.</param>
+    public PlayerSim(int gameSeed, int level, int verticalRepeat = 2)
     {
         _random = new LegacyRandom(gameSeed);
         _level = level;
+        _falling = new FallingPiece(Board, LegacySpeeds.Gravity(level), LegacySpeeds.SoftDrop(verticalRepeat));
         Restart();
     }
 
@@ -35,6 +41,15 @@ public sealed class PlayerSim
     public int Stamps { get; private set; }
     public int InvalidStamps { get; private set; }
     public int Deaths { get; private set; }
+
+    /// <summary>The piece in flight; moves are applied to it with <see cref="Move"/>.</summary>
+    public FallingPiece Falling => _falling;
+
+    /// <summary>Where the current piece landed, once <see cref="Move"/> has brought it to rest.</summary>
+    public Placement? Landed { get; private set; }
+
+    /// <summary>Moves received after the piece had already landed (should stay zero in a valid game).</summary>
+    public int MovesAfterLanding { get; private set; }
 
     /// <summary>Slot of the player who most recently attacked this one, or <see cref="NoAttacker"/>.</summary>
     public int LastAttacker { get; private set; } = NoAttacker;
@@ -60,6 +75,24 @@ public sealed class PlayerSim
         _pendingGarbage.Clear();
         while (_queue[0] < 0)
             Shift();
+        _falling.Spawn(_queue[0]);
+        Landed = null;
+    }
+
+    /// <summary>
+    /// Plays one frame of the current piece (one byte of a <c>Moves</c> packet). Returns the
+    /// placement when the piece lands; it is then stamped with <see cref="Stamp"/>.
+    /// </summary>
+    public Placement? Move(MoveFlags moves)
+    {
+        if (Landed is not null)
+        {
+            MovesAfterLanding++;
+            return Landed;
+        }
+        var landed = _falling.Step(moves);
+        Landed = landed;
+        return landed;
     }
 
     /// <summary>
@@ -69,6 +102,7 @@ public sealed class PlayerSim
     {
         Deaths++;
         _pendingGarbage.Clear();
+        Landed = null;
         return LastAttacker;
     }
 
@@ -132,6 +166,8 @@ public sealed class PlayerSim
             _pendingGarbage.Clear();
             lines += ClearLines();
         }
+        _falling.Spawn(_queue[0]);
+        Landed = null;
         return new StampResult(valid, piece, lines, Score - before);
     }
 

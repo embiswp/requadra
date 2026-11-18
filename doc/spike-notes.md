@@ -133,6 +133,7 @@ The two fixes that resolved the multiplayer divergence:
 | `Pieces.cs` | the 7 pieces in 4 rotations (generated from the C++ table) | `bloc.cc` |
 | `Board.cs` | playfield, placement checks, row clearing, support/gravity pass, garbage rows | `canvas.cc`, `player.cc` (`check_nb_line`, `Player_check_link`, `Player_add_bonus`) |
 | `LegacyScoring.cs` | line-clear points, clean-board bonus | `canvas.cc` (`give_line`), `player.cc` (`check_clean`) |
+| `FallingPiece.cs` | one piece falling frame by frame from `Moves` bytes, speeds | `player.cc` (`Player_process_key::step`, `move_down`, `drop_down`, rotate and move functions), `canvas.cc` (`calc_speed`) |
 | `PlayerSim.cs` | one player: piece queue, stamping, garbage queue, attacker bookkeeping, score, lines | `player.cc`, `canvas.cc` (`add_packet`) |
 | `Demos/DemoReplay.cs` | replays a demo through the above | `recording.cc` |
 
@@ -145,13 +146,45 @@ Not ported: level-up, non-survivor frag rules, net version 23+ rules (new comple
 bonus, blind attacks), hot potato, handicap effects on sent lines. None of these are exercised by
 the bundled demos, so they cannot be verified here.
 
+## Falling pieces from `Moves` packets (third step)
+
+The `Moves` packets hold one byte per game frame in which a piece was falling. Bits: 1 down, 2 left,
+4 right, 8 rotate left, 16 rotate right, 32 rotate twice, 64 hard drop. `FallingPiece` applies them
+in the game's fixed order and then applies gravity; the piece lands when the next gravity step would
+collide. `DemoReplay.Run(demo, ReplayInput.Moves)` feeds these bytes into `PlayerSim.Move` and compares
+each landing with the following stamp packet.
+
+Result: **all 2409 stamps in the four demos land exactly where the stamp packet says, in position,
+rotation and on the exact frame** (the last move byte of a piece is the landing frame; no bytes follow
+a landing). Score, lines, frags and deaths still match the summaries.
+
+Things the demos taught us:
+
+- **No wall kick in the recording clients.** The current C++ client tries to shift a piece sideways
+  when a rotation is blocked by a wall. A prototype with that kick broke one recorded stamp
+  (`demo01`, player Rem, stamp 21), without it all 2409 match. The `Moves` bytes do not record the
+  sideways shift, so kicks cannot be replayed from them anyway. `FallingPiece` has no kick. If the new
+  game wants wall kicks, that is a rules option, not something the demos can verify.
+- **Drop points come from the old client.** In the current C++ code the points for a placed piece are
+  `max(0, 100 - max(frames - 50, 0)) >> 1`. With a small constant frame offset this matches 87% of the
+  recorded stamp scores; the rest are larger than the formula allows (up to 54 instead of 50), so the
+  1.1.0 clients used a different formula. The replay therefore keeps taking the drop points from the
+  stamp packet, and the formula is not ported.
+- **Stamp timing relative to other packets.** A stamp takes effect when the stamp packet arrives, not
+  when the last `Moves` byte is played, because garbage rows from other players can arrive in between
+  and the server order decides which stamp they belong to.
+
+Not covered: the key-to-action layer (key repeat, held keys), the death check when a new piece
+collides at spawn (the replay follows the `Dead` packets), and speed changes by level (levels do not
+change in these games).
+
 ## Suggested next steps
 
 1. Decide which rule sets the new game must support. The bundled demos only cover the 1.1 rules
    (net version 20, survivor). Newer rules (net versions 23 and 24, blind and potato modes) have no
    recorded demos, so they would need new test data, for example recorded by the C++ client.
-2. Move the replay from "consume final placements" to "simulate falling pieces from key presses"
-   (`Moves` packets), which is what a playable game needs. The final placements in the stamp
-   packets make a good check for that simulation.
+2. Add the layer above the move bits: keyboard (or touch) input to per-frame actions with key
+   repeat, the spawn-collision death check, and a drop-points formula for the new rules. These need
+   decisions about the new game, not just more porting.
 3. Start the MonoGame client on top of `Quadra.Core`.
 4. Android/iOS planning remains a separate task.
