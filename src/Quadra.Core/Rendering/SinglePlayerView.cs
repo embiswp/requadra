@@ -52,7 +52,60 @@ public sealed class SinglePlayerView
         _colors = new BlockColors(palette);
     }
 
-    public void Paint(SinglePlayerGame game)
+    public void Paint(SinglePlayerGame game) =>
+        PaintPlayer(game.Player, game.Animation, game.Phase == GamePhase.Falling, game.LevelUpFrames, clearStatistics: true);
+
+    /// <summary>
+    /// Paints a network game: the local board as in a single-player game, and the other players' boards
+    /// small, in the right frame (at most <see cref="MaxShownOpponents"/>), each with its name.
+    /// </summary>
+    public void Paint(NetworkGame game)
+    {
+        var local = game.Player;
+        PaintPlayer(local, null, !game.IsDead && game.Started && !game.Paused, 0, clearStatistics: false);
+
+        int shown = 0;
+        foreach (var other in game.Others)
+        {
+            if (shown == MaxShownOpponents)
+                break;
+            int x = OpponentX + shown % 2 * OpponentColumnStep;
+            int y = OpponentY + shown / 2 * OpponentRowStep;
+            PaintOpponent(other, x, y);
+            shown++;
+        }
+    }
+
+    public const int MaxShownOpponents = 6;
+    private const int OpponentX = 440, OpponentY = 40, OpponentColumnStep = 90, OpponentRowStep = 145;
+    private const int OpponentCell = BlockPainter.SmallCellSize;
+
+    private void PaintOpponent(RemotePlayer other, int x, int y)
+    {
+        var board = other.Sim.Board;
+        for (int row = Board.FirstClearableRow; row < Board.Rows; row++)
+            for (int col = Board.FirstColumn; col < Board.EndColumn; col++)
+            {
+                if (!board.IsOccupied(row, col))
+                    continue;
+                byte cell = board.Cell(row, col);
+                BlockPainter.DrawSmall(Overlay, x + (col - Board.FirstColumn) * OpponentCell,
+                    y + (row - Board.FirstClearableRow) * OpponentCell, cell & 15, cell >> 4, _colors!);
+            }
+
+        uint border = PixelBuffer.Pack(_palette![210]);
+        int width = 10 * OpponentCell, height = 20 * OpponentCell;
+        Overlay.HLine(y - 1, x - 1, width + 2, border);
+        Overlay.HLine(y + height, x - 1, width + 2, border);
+        Overlay.VLine(x - 1, y, height, border);
+        Overlay.VLine(x + width, y, height, border);
+
+        string name = other.Name.Length > 9 ? other.Name[..9] : other.Name;
+        _text.Draw(Overlay, name, x, y + height + 3, White);
+        _text.Draw(Overlay, other.Sim.Score.ToString(), x, y + height + 3 + _text.Height, new Rgb(200, 200, 200));
+    }
+
+    private void PaintPlayer(PlayerSim player, AnimationFrame? animation, bool showPiece, int levelUpFrames, bool clearStatistics)
     {
         if (_colors is null || _palette is null)
             throw new InvalidOperationException("Call SetPalette first.");
@@ -60,12 +113,10 @@ public sealed class SinglePlayerView
         Overlay.Clear();
         _board.Clear();
 
-        var player = game.Player;
-        var animation = game.Animation;
         IBoardView board = animation?.Board ?? player.Board;
         PaintCells(board);
 
-        if (game.Phase == GamePhase.Falling)
+        if (showPiece)
         {
             var piece = player.Falling;
             // The landing shadow first, then the piece (which slides smoothly in both directions).
@@ -87,14 +138,15 @@ public sealed class SinglePlayerView
                     _board.HLine((row - Board.FirstClearableRow) * BlockPainter.CellSize + i, 0, BoardWidth - 1, color);
         }
 
-        if (game.LevelUpFrames > 0 && LevelUpBanner is { } banner)
-            _board.Blit(banner, 10, game.LevelUpFrames - 30);
+        if (levelUpFrames > 0 && LevelUpBanner is { } banner)
+            _board.Blit(banner, 10, levelUpFrames - 30);
 
         Overlay.Blit(_board, BoardX, BoardY);
         PaintNext(player);
         PaintScores(player);
         PaintPieceStatistics(player);
-        PaintClearStatistics(player);
+        if (clearStatistics)
+            PaintClearStatistics(player);
     }
 
     private void PaintCells(IBoardView board)

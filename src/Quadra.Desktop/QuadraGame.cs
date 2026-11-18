@@ -15,7 +15,7 @@ namespace Quadra.Desktop;
 /// structure) and on a <see cref="SinglePlayerGame"/>, and draws what they report with the original art
 /// and sounds. All rules and screen logic live in Quadra.Core; this class only connects them to MonoGame.
 /// </summary>
-public sealed class QuadraGame : Game
+public sealed partial class QuadraGame : Game
 {
     private const int MaxCatchUpMs = 300;
     private const int StepMs = 1000 / SinglePlayerGame.FramesPerSecond;
@@ -126,10 +126,13 @@ public sealed class QuadraGame : Game
             _flow.Show(Screen.HighScores);
         }
         _shownScreen = _flow.Current;
+        if (_options.Host is not null || _options.Join is not null)
+            StartNetwork();
     }
 
     protected override void UnloadContent()
     {
+        StopNetwork();
         _assets.Dispose();
         base.UnloadContent();
     }
@@ -143,7 +146,9 @@ public sealed class QuadraGame : Game
         if (Pressed(keyboard, Keys.F11))
             ToggleFullscreen();
 
-        if (_flow.Current == Screen.Playing)
+        if (_networkActive)
+            UpdateNetwork(keyboard, gameTime);
+        else if (_flow.Current == Screen.Playing)
             UpdatePlaying(keyboard, gameTime);
         else
             UpdateMenu(keyboard, mouse);
@@ -308,20 +313,26 @@ public sealed class QuadraGame : Game
             _flow.Setup.TypeCharacter(e.Character);
     }
 
-    private void StartGame()
+    /// <summary>The current player's keys as bindings; also remembers which keys to report to <see cref="_keys"/>.</summary>
+    private KeyBindings CreateBindings()
     {
         var player = _settings.CurrentPlayer;
         var defaults = PlayerSettings.DefaultKeys();
         Keys Resolve(GameAction action) =>
             Enum.TryParse<Keys>(player.Keys.GetValueOrDefault(action, defaults[action]), out var key) ? key : Enum.Parse<Keys>(defaults[action]);
 
-        var bindings = new KeyBindings(
+        _gameKeys = Enum.GetValues<GameAction>().Select(Resolve).Distinct().ToArray();
+        _keys = new KeyStates();
+        return new KeyBindings(
             (int)Resolve(GameAction.Left), (int)Resolve(GameAction.Right), (int)Resolve(GameAction.RotateLeft),
             (int)Resolve(GameAction.Down), (int)Resolve(GameAction.RotateRight), (int)Resolve(GameAction.RotateTwice),
             (int)Resolve(GameAction.Drop));
-        _gameKeys = Enum.GetValues<GameAction>().Select(Resolve).Distinct().ToArray();
+    }
 
-        _keys = new KeyStates();
+    private void StartGame()
+    {
+        var player = _settings.CurrentPlayer;
+        var bindings = CreateBindings();
         _game = new SinglePlayerGame(Environment.TickCount, _keys, bindings, player.HorizontalSpeed, player.VerticalSpeed,
             _options.StartLevel, player.ContinuousDown);
         _view.ShowShadow = player.Shadow;
@@ -467,7 +478,9 @@ public sealed class QuadraGame : Game
         // Paint the 640 x 480 picture, then scale it to the window keeping its proportions.
         GraphicsDevice.SetRenderTarget(_screen);
         _batch.Begin(samplerState: SamplerState.PointClamp);
-        if (_flow.Current == Screen.Playing && _game is not null)
+        if (_networkActive)
+            DrawNetwork();
+        else if (_flow.Current == Screen.Playing && _game is not null)
             DrawGame(_game);
         else
             DrawMenu(gameTime);

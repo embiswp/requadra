@@ -44,8 +44,9 @@ Needs the .NET SDK (the libraries target net8.0; the tests target net11.0).
 
 The rules of the 1.1 game are ported and verified against the recorded demos: every piece, stamp, score,
 line count, frag and death in the four demos is reproduced, and so is every garbage attack. The game list
-server, the network protocol, a game host and a client library are built and tested (also over sockets), but the
-desktop client has no network screens yet, and nothing has been tried against the original C++ client.
+server, the network protocol, a game host and a client library are built and tested (also over sockets). The
+desktop client plays a network game from the command line (`--host [port]`, `--join host[:port]`, `--name`), with
+no menu screens for it yet; nothing has been tried against the original C++ client.
 Newer rules (hot potato, blind attacks) are not planned. See [`doc/spike-notes.md`](doc/spike-notes.md) for what is verified and what is not.
 
 The original game is licensed under the LGPL; see [`LICENSE`](LICENSE). The art and sounds come from the

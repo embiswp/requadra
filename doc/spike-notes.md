@@ -456,13 +456,27 @@ What is not done:
   missed (for example, what it does with the longer 1.3-style packets the host sends). The legacy game can be
   built to try this.
 
+### Network play in the desktop client (eighth step)
+
+`NetworkGame` (Core) is the local player's loop over a `GameClient`: it applies what the network delivered,
+plays the piece from the keys, sends the stamp, sends the death when the next piece cannot spawn, and
+respawns on a key press (after a lock of one second, as the original waits for a key). The desktop client
+starts it with `--host [port]` (hosts in the same process and joins it) or `--join host[:port]`, with
+`--name` for the player name; Enter starts the countdown. The local board is drawn as in a single-player
+game, and up to six other players' boards small in the right frame, with name and score.
+
+Checked: tests drive two `NetworkGame`s through a host (countdown, a landing seen identically on the other
+machine, death and respawn), and two real windows played each other over TCP (the joiner showed the host's
+stamped piece, name and score). Known gaps: line clears are not animated, remote falling pieces are not
+shown (only stamps), the level does not rise in a network game (`MultiplayerState` builds players without
+`levelUp`), there is no lobby or menu entry, and the countdown is shown as plain text.
+
 ## Suggested next steps
 
 1. Play the client and tune the feel: sound balance, speed per level, key timing, menu use.
-2. The network game on screen: a lobby (host or join, player list, start), the play screen with several
-   boards (the single-player view already draws a board; the others are the same view smaller), the local
-   player loop sending its stamps through `GameClient`, and the frame-accurate clear animation that fixes the
-   garbage order above. Then round management on the host.
+2. The rest of the network game on screen: a lobby in the menus (host or join, game list from the server,
+   player list, start), the clear animation (which also fixes the garbage order above), remote falling
+   pieces (needs the client to send `Moves`), level-up. Then round management on the host.
 3. Try the host and client against the C++ game to see whether they talk to each other.
 4. Late join (`Download`) and the rest of the list under "not done".
 5. Smaller gaps: the 5-minute sprint game, high score playback and posting to the shared table, the demo

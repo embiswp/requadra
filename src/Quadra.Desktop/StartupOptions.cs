@@ -39,6 +39,15 @@ public sealed record StartupOptions
     /// <summary>Language to start in for a smoke run (0 English, 1 French); not saved.</summary>
     public int? Language { get; init; }
 
+    /// <summary>Host a network game on this port (and join it), or "" for the default port.</summary>
+    public string? Host { get; init; }
+
+    /// <summary>Join the network game at <c>host</c> or <c>host:port</c>.</summary>
+    public string? Join { get; init; }
+
+    /// <summary>Name to play under in a network game instead of the player's own.</summary>
+    public string? PlayerName { get; init; }
+
     public static StartupOptions Parse(string[] args)
     {
         string? Value(string name) =>
@@ -60,6 +69,9 @@ public sealed record StartupOptions
             Focus = Value("--focus"),
             DataDirectory = Value("--data-dir"),
             Script = Value("--script"),
+            Host = args.Contains("--host") ? Value("--host") is { } port && int.TryParse(port, out _) ? port : "" : null,
+            Join = Value("--join"),
+            PlayerName = Value("--name"),
             Language = int.TryParse(Value("--lang"), out int lang) ? lang : null,
         };
     }
