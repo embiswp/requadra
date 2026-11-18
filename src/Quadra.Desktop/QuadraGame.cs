@@ -1,34 +1,23 @@
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
+using Quadra.Core.Assets;
 using Quadra.Core.Game;
 using Quadra.Core.Input;
-using Quadra.Core.Rules;
+using Quadra.Core.Rendering;
 
 namespace Quadra.Desktop;
 
 /// <summary>
 /// The window: turns the keyboard into <see cref="KeyStates"/> events, steps a
-/// <see cref="SinglePlayerGame"/> every 10 ms and draws it. All rules live in Quadra.Core.
+/// <see cref="SinglePlayerGame"/> every 10 ms, draws it with the original art and plays the original
+/// sounds. All rules live in Quadra.Core; this class only connects them to MonoGame.
 /// </summary>
 public sealed class QuadraGame : Game
 {
-    private const int Cell = 24;
-    private const int VisibleRows = 20;
-    private const int FirstVisibleRow = Board.FirstClearableRow;   // rows above are the spawn area
-    private const int BoardX = 24;
-    private const int BoardY = 56;
-    private const int BoardWidth = 10 * Cell;
-    private const int BoardHeight = VisibleRows * Cell;
-    private const int PanelX = BoardX + BoardWidth + 28;
     private const int MaxCatchUpMs = 300;
     private const int StepMs = 1000 / SinglePlayerGame.FramesPerSecond;
-
-    private static readonly Color[] PieceColors =
-    [
-        new(240, 220, 60), new(80, 200, 90), new(230, 70, 70), new(70, 120, 230),
-        new(240, 150, 50), new(80, 210, 230), new(180, 90, 220),
-    ];
+    private const float MasterVolume = 0.6f;
 
     // The game's keys are plain integers; here they are the MonoGame key codes.
     private static readonly KeyBindings Bindings = new(
@@ -40,28 +29,42 @@ public sealed class QuadraGame : Game
     private readonly GraphicsDeviceManager _graphics;
     private readonly int _smokeUpdates;
     private readonly string? _screenshotPath;
+    private readonly int _startLevel;
+    private readonly bool _pauseAtEnd;
     private SpriteBatch _batch = null!;
-    private Texture2D _pixel = null!;
+    private AssetLibrary _assets = null!;
+    private SinglePlayerView _view = null!;
+    private SoundCues _cues = null!;
+    private RenderTarget2D _screen = null!;      // the original's 640 x 480, scaled to the window
+    private Texture2D _overlay = null!;          // the painted board, next pieces and scores
+    private Texture2D _pauseSign = null!;
+    private Background _background = null!;
     private KeyboardState _previous;
     private KeyStates _keys = new();
     private SinglePlayerGame _game;
+    private int _shownLevel;
     private int _accumulatorMs;
     private int _updates;
     private bool _paused;
 
     /// <param name="smokeUpdates">If above zero, play automatically for this many window updates, then exit.</param>
     /// <param name="screenshotPath">In smoke mode, save the last frame to this PNG file.</param>
-    public QuadraGame(int smokeUpdates = 0, string? screenshotPath = null)
+    /// <param name="startLevel">Level to start at (to look at other levels' colours and sounds).</param>
+    /// <param name="pauseAtEnd">In smoke mode, show the pause sign in the last frame.</param>
+    public QuadraGame(int smokeUpdates = 0, string? screenshotPath = null, int startLevel = 1, bool pauseAtEnd = false)
     {
         _smokeUpdates = smokeUpdates;
         _screenshotPath = screenshotPath;
+        _startLevel = startLevel;
+        _pauseAtEnd = pauseAtEnd;
         _graphics = new GraphicsDeviceManager(this)
         {
-            PreferredBackBufferWidth = PanelX + 160,
-            PreferredBackBufferHeight = BoardY + BoardHeight + 24,
+            PreferredBackBufferWidth = SinglePlayerView.ScreenWidth * 3 / 2,
+            PreferredBackBufferHeight = SinglePlayerView.ScreenHeight * 3 / 2,
         };
         IsMouseVisible = true;
         IsFixedTimeStep = false;      // the logic runs on its own 10 ms clock, see Update
+        Window.AllowUserResizing = true;
         Window.Title = "Quadra";
         _game = NewGame();
     }
@@ -71,14 +74,26 @@ public sealed class QuadraGame : Game
     private SinglePlayerGame NewGame()
     {
         _keys = new KeyStates();
-        return new SinglePlayerGame(Environment.TickCount, _keys, Bindings);
+        _shownLevel = 0;
+        return new SinglePlayerGame(Environment.TickCount, _keys, Bindings, startLevel: _startLevel);
     }
 
     protected override void LoadContent()
     {
         _batch = new SpriteBatch(GraphicsDevice);
-        _pixel = new Texture2D(GraphicsDevice, 1, 1);
-        _pixel.SetData([Color.White]);
+        _assets = new AssetLibrary(GraphicsDevice);
+        _view = new SinglePlayerView(_assets.TextFont, _assets.NumberFont) { LevelUpBanner = _assets.LevelUpBanner };
+        _cues = new SoundCues(new Random(), _assets.SampleRate);
+        _screen = new RenderTarget2D(GraphicsDevice, SinglePlayerView.ScreenWidth, SinglePlayerView.ScreenHeight);
+        _overlay = new Texture2D(GraphicsDevice, SinglePlayerView.ScreenWidth, SinglePlayerView.ScreenHeight);
+        _pauseSign = _assets.ToTexture(_assets.PauseBanner);
+        ShowLevel(_game.DisplayedLevel);
+    }
+
+    protected override void UnloadContent()
+    {
+        _assets.Dispose();
+        base.UnloadContent();
     }
 
     protected override void Update(GameTime gameTime)
@@ -87,7 +102,10 @@ public sealed class QuadraGame : Game
         if (keyboard.IsKeyDown(Keys.Escape))
             Exit();
         if (Pressed(keyboard, Keys.P) && !_game.IsOver)
+        {
             _paused = !_paused;
+            _assets.Play(_cues.Pause(), MasterVolume);
+        }
         if (Pressed(keyboard, Keys.Enter) && _game.IsOver)
             _game = NewGame();
 
@@ -99,13 +117,47 @@ public sealed class QuadraGame : Game
             {
                 _accumulatorMs -= StepMs;
                 _game.Update();
+                PlayEvents();
             }
+            if (_game.DisplayedLevel != _shownLevel)
+                ShowLevel(_game.DisplayedLevel);
         }
 
         _previous = keyboard;
+        if (_pauseAtEnd && _smokeUpdates > 0 && _updates + 1 >= _smokeUpdates)
+            _paused = true;
         if (_smokeUpdates > 0 && ++_updates >= _smokeUpdates + (_screenshotPath is null ? 0 : 1))
             Exit();
         base.Update(gameTime);
+    }
+
+    /// <summary>The level sets the background, the block colours and which sounds are used.</summary>
+    private void ShowLevel(int level)
+    {
+        _shownLevel = level;
+        _background = _assets.BackgroundFor(level);
+        _view.SetPalette(_background.Palette);
+    }
+
+    private void PlayEvents()
+    {
+        var set = SoundCues.ForLevel(_game.DisplayedLevel);
+        foreach (var e in _game.Events)
+        {
+            SoundCue? cue = e.Kind switch
+            {
+                GameEventKind.Rotated => _cues.Rotate(set, e.Column),
+                GameEventKind.Stamped => _cues.Stamp(set, e.Column),
+                GameEventKind.LineFlash => _cues.LineFlash(set, e.Combo),
+                GameEventKind.BlocksFell => _cues.Fall(e.Value, e.Combo),
+                GameEventKind.LevelUp => _cues.LevelUp(),
+                GameEventKind.GameOver => _cues.Death(set),
+                _ => null,
+            };
+            if (cue is { } c)
+                _assets.Play(c, MasterVolume);
+        }
+        _game.Events.Clear();
     }
 
     /// <summary>Reports key-down and key-up as events, the way an input layer should.</summary>
@@ -137,132 +189,43 @@ public sealed class QuadraGame : Game
 
     protected override void Draw(GameTime gameTime)
     {
+        // Paint the 640 x 480 picture, then scale it to the window keeping its proportions.
+        _view.Paint(_game);
+        if (_game.IsOver)
+            _view.PaintMessage("Game Over", "Press Enter");
+        _overlay.SetData(_view.Overlay.Pixels);
+
+        GraphicsDevice.SetRenderTarget(_screen);
+        _batch.Begin(samplerState: SamplerState.PointClamp);
+        _batch.Draw(_background.Picture, Vector2.Zero, Color.White);
+        _batch.Draw(_overlay, Vector2.Zero, Color.White);
+        if (_paused)
+            _batch.Draw(_pauseSign, new Vector2((SinglePlayerView.ScreenWidth - _pauseSign.Width) / 2, (SinglePlayerView.ScreenHeight - _pauseSign.Height) / 2), Color.White);
+        _batch.End();
+        GraphicsDevice.SetRenderTarget(null);
+
         if (_screenshotPath is not null && _smokeUpdates > 0 && _updates >= _smokeUpdates)
             SaveScreenshot(_screenshotPath);
 
-        DrawScene();
+        GraphicsDevice.Clear(Color.Black);
+        _batch.Begin(samplerState: SamplerState.LinearClamp);
+        _batch.Draw(_screen, FittedRectangle(), Color.White);
+        _batch.End();
         base.Draw(gameTime);
+    }
+
+    private Rectangle FittedRectangle()
+    {
+        int w = GraphicsDevice.PresentationParameters.BackBufferWidth;
+        int h = GraphicsDevice.PresentationParameters.BackBufferHeight;
+        float scale = Math.Min(w / (float)SinglePlayerView.ScreenWidth, h / (float)SinglePlayerView.ScreenHeight);
+        int fw = (int)(SinglePlayerView.ScreenWidth * scale), fh = (int)(SinglePlayerView.ScreenHeight * scale);
+        return new Rectangle((w - fw) / 2, (h - fh) / 2, fw, fh);
     }
 
     private void SaveScreenshot(string path)
     {
-        int width = GraphicsDevice.PresentationParameters.BackBufferWidth;
-        int height = GraphicsDevice.PresentationParameters.BackBufferHeight;
-        using var target = new RenderTarget2D(GraphicsDevice, width, height);
-        GraphicsDevice.SetRenderTarget(target);
-        DrawScene();
-        GraphicsDevice.SetRenderTarget(null);
         using var stream = File.Create(path);
-        target.SaveAsPng(stream, width, height);
-    }
-
-    private void DrawScene()
-    {
-        GraphicsDevice.Clear(new Color(18, 20, 28));
-        _batch.Begin(samplerState: SamplerState.PointClamp);
-
-        PixelFont.Draw(_batch, _pixel, "QUADRA", BoardX, 16, 5, Color.White);
-        DrawBoard();
-        DrawPanel();
-        if (_game.IsOver)
-            DrawOverlay("GAME OVER", "PRESS ENTER");
-        else if (_paused)
-            DrawOverlay("PAUSED", "PRESS P");
-
-        _batch.End();
-    }
-
-    private void DrawBoard()
-    {
-        Fill(BoardX - 4, BoardY - 4, BoardWidth + 8, BoardHeight + 8, new Color(60, 64, 80));
-        Fill(BoardX, BoardY, BoardWidth, BoardHeight, new Color(8, 9, 14));
-
-        var board = _game.Player.Board;
-        for (int row = FirstVisibleRow; row < Board.Rows; row++)
-            for (int col = Board.FirstColumn; col < Board.EndColumn; col++)
-                if (board.IsOccupied(row, col))
-                    DrawCell(BoardX + (col - Board.FirstColumn) * Cell, BoardY + (row - FirstVisibleRow) * Cell,
-                        board.Cell(row, col), Cell);
-
-        if (_game.IsOver)
-            return;
-
-        // The falling piece moves smoothly: its row is a fraction, 288 vertical units to a row.
-        var piece = _game.Player.Falling;
-        float top = piece.Y / 288f + Board.FirstClearableRow - FirstVisibleRow;
-        for (int j = 0; j < 4; j++)
-            for (int i = 0; i < 4; i++)
-            {
-                byte shape = Pieces.Shapes[piece.Piece, piece.Rotation, j, i];
-                if (shape == 0)
-                    continue;
-                int x = BoardX + (piece.Column + i - Board.FirstColumn) * Cell;
-                int y = BoardY + (int)((top + j) * Cell);
-                DrawCell(x, y, (byte)(shape + (piece.Piece << 4)), Cell, clipTop: BoardY);
-            }
-    }
-
-    private void DrawPanel()
-    {
-        var player = _game.Player;
-        int y = BoardY;
-        foreach (var (label, value) in new[] { ("SCORE", player.Score), ("LINES", player.Lines), ("LEVEL", player.Level) })
-        {
-            PixelFont.Draw(_batch, _pixel, label, PanelX, y, 3, new Color(150, 160, 190));
-            PixelFont.Draw(_batch, _pixel, value.ToString(), PanelX, y + 24, 4, Color.White);
-            y += 72;
-        }
-
-        PixelFont.Draw(_batch, _pixel, "NEXT", PanelX, y, 3, new Color(150, 160, 190));
-        y += 28;
-        foreach (int piece in player.Upcoming)
-        {
-            const int small = 12;
-            for (int j = 0; j < 4; j++)
-                for (int i = 0; i < 4; i++)
-                {
-                    byte shape = Pieces.Shapes[piece, 0, j, i];
-                    if (shape != 0)
-                        DrawCell(PanelX + i * small, y + j * small, (byte)(shape + (piece << 4)), small);
-                }
-            y += 4 * small + 6;
-        }
-    }
-
-    private void DrawOverlay(string title, string hint)
-    {
-        Fill(BoardX, BoardY + BoardHeight / 2 - 60, BoardWidth, 120, new Color(0, 0, 0, 200));
-        PixelFont.Draw(_batch, _pixel, title, BoardX + (BoardWidth - PixelFont.Measure(title, 5)) / 2, BoardY + BoardHeight / 2 - 36, 5, Color.White);
-        PixelFont.Draw(_batch, _pixel, hint, BoardX + (BoardWidth - PixelFont.Measure(hint, 3)) / 2, BoardY + BoardHeight / 2 + 16, 3, new Color(150, 160, 190));
-    }
-
-    /// <summary>
-    /// Draws one block. The low four bits of a cell mark the sides that are NOT joined to a
-    /// neighbouring block of the same piece; joined sides run flush so pieces look connected.
-    /// </summary>
-    private void DrawCell(int x, int y, byte cell, int size, int clipTop = int.MinValue)
-    {
-        var color = PieceColors[(cell >> 4) % PieceColors.Length];
-        int inset = Math.Max(1, size / 12);
-        int left = (cell & 1) != 0 ? inset : 0, top = (cell & 2) != 0 ? inset : 0;
-        int right = (cell & 4) != 0 ? inset : 0, bottom = (cell & 8) != 0 ? inset : 0;
-        FillClipped(x + left, y + top, size - left - right, size - top - bottom, color, clipTop);
-        // a lighter top-left edge gives the blocks a little depth
-        if ((cell & 2) != 0)
-            FillClipped(x + left, y + top, size - left - right, Math.Max(1, size / 8), Color.Lerp(color, Color.White, 0.35f), clipTop);
-    }
-
-    private void Fill(int x, int y, int w, int h, Color color) => _batch.Draw(_pixel, new Rectangle(x, y, w, h), color);
-
-    /// <summary>Fills a rectangle but never above <paramref name="clipTop"/> (pieces enter from above the board).</summary>
-    private void FillClipped(int x, int y, int w, int h, Color color, int clipTop)
-    {
-        if (y < clipTop)
-        {
-            h -= clipTop - y;
-            y = clipTop;
-        }
-        if (h > 0 && w > 0)
-            Fill(x, y, w, h, color);
+        _screen.SaveAsPng(stream, _screen.Width, _screen.Height);
     }
 }

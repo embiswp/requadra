@@ -8,7 +8,7 @@ game is kept untouched in [`legacy/`](legacy/).
 | Path | What |
 |---|---|
 | `src/Quadra.Core` | Game rules, input layer, demo reader and packet decoder. No graphics or platform code. |
-| `src/Quadra.Desktop` | MonoGame (DesktopGL) client for Windows, macOS and Linux. |
+| `src/Quadra.Desktop` | MonoGame (DesktopGL) client for Windows, macOS and Linux. Uses the original art, fonts and sounds from `legacy/`. |
 | `src/Quadra.DemoInfo` | Command-line tool that replays the recorded demos and prints the results. |
 | `tests/Quadra.Tests` | xUnit tests, including replays of the four demos in `legacy/demos`. |
 | `legacy/` | The original C++ game, its art, sounds and the old Perl server. |
@@ -22,6 +22,9 @@ dotnet test                                    # run the tests
 dotnet run --project src/Quadra.DemoInfo -- legacy/demos/demo00.rec
 ```
 
+Try other levels with `dotnet run --project src/Quadra.Desktop -- --level 7`: each of the ten levels has its
+own background, block colours and sound set.
+
 Controls: arrows move and soft-drop, Up rotates right, Z rotates left, X rotates twice, Space drops,
 P pauses, Esc quits.
 
@@ -33,4 +36,5 @@ The rules of the 1.1 game are ported and verified against the recorded demos: ev
 line count, frag and death in the four demos is reproduced. Newer rules, networking, menus, art and sound
 are not done yet. See [`doc/spike-notes.md`](doc/spike-notes.md) for what is verified and what is not.
 
-The original game is licensed under the LGPL; see [`LICENSE`](LICENSE).
+The original game is licensed under the LGPL; see [`LICENSE`](LICENSE). The art and sounds come from the
+original and carry its copyright (Ludus Design); see the note in [`doc/spike-notes.md`](doc/spike-notes.md).

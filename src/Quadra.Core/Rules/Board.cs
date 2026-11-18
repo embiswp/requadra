@@ -1,10 +1,38 @@
 namespace Quadra.Core.Rules;
 
+/// <summary>What a painter needs to know about a playfield.</summary>
+public interface IBoardView
+{
+    bool IsOccupied(int row, int column);
+
+    /// <summary>Colour (piece number &lt;&lt; 4) plus the four border bits of the cell.</summary>
+    byte Cell(int row, int column);
+}
+
+/// <summary>A frozen copy of a playfield, used to replay how a line clear looked.</summary>
+public sealed class BoardSnapshot : IBoardView
+{
+    private readonly bool[,] _occupied;
+    private readonly byte[,] _cell;
+
+    internal BoardSnapshot(bool[,] occupied, byte[,] cell)
+    {
+        _occupied = (bool[,])occupied.Clone();
+        _cell = (byte[,])cell.Clone();
+    }
+
+    public bool IsOccupied(int row, int column) =>
+        (uint)row < Board.Height && (uint)column < Board.Width && _occupied[row, column];
+
+    public byte Cell(int row, int column) =>
+        (uint)row < Board.Height && (uint)column < Board.Width ? _cell[row, column] : (byte)0;
+}
+
 /// <summary>
 /// One player's playfield. The layout follows <c>Canvas</c> in the C++ code: a 18 x 36 grid whose
 /// playable part is columns 4-13 and rows 0-31; the rest is wall and floor, which count as occupied.
 /// </summary>
-public sealed class Board
+public sealed class Board : IBoardView
 {
     public const int Width = 18;
     public const int Height = 36;
@@ -22,8 +50,9 @@ public sealed class Board
 
     public bool IsOccupied(int row, int column) => InRange(row, column) ? _occupied[row, column] : true;
 
-    /// <summary>Colour (piece number &lt;&lt; 4) plus the four border bits of the cell.</summary>
-    public byte Cell(int row, int column) => _cell[row, column];
+    public byte Cell(int row, int column) => InRange(row, column) ? _cell[row, column] : (byte)0;
+
+    public BoardSnapshot Snapshot() => new(_occupied, _cell);
 
     public bool IsEmpty()
     {
@@ -85,7 +114,7 @@ public sealed class Board
     /// borders above and below. Rows are removed in place; nothing falls until
     /// <see cref="DropUnsupported"/>. Returns the number of rows removed.
     /// </summary>
-    public int ClearFullRows()
+    public int ClearFullRows(List<int>? rows = null)
     {
         int cleared = 0;
         for (int j = FirstClearableRow; j < Rows; j++)
@@ -105,6 +134,7 @@ public sealed class Board
                 if (_occupied[j + 1, i] && (_cell[j + 1, i] & 2) == 0)
                     _cell[j + 1, i] |= 2;
             }
+            rows?.Add(j);
             cleared++;
         }
         return cleared;
@@ -114,8 +144,11 @@ public sealed class Board
     /// Lets cells that no longer rest on anything fall one row at a time until everything is
     /// supported again (<c>Player_check_link</c>). Cells stay together through their border bits.
     /// </summary>
-    public void DropUnsupported()
+    /// <param name="steps">If given, receives a snapshot after every step in which cells moved down.</param>
+    /// <returns>The number of steps in which cells moved down.</returns>
+    public int DropUnsupported(List<BoardSnapshot>? steps = null)
     {
+        int moves = 0;
         ClearSupport();
         while (true)
         {
@@ -144,7 +177,9 @@ public sealed class Board
                         _occupied[j, i] = false;
                     }
             if (!moved)
-                return;
+                return moves;
+            moves++;
+            steps?.Add(Snapshot());
         }
     }
 

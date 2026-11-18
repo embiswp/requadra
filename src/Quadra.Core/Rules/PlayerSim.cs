@@ -5,8 +5,16 @@ namespace Quadra.Core.Rules;
 /// <summary>Everything about the current piece that a frame can change, so a frame can be tried and undone.</summary>
 public readonly record struct FrameSnapshot(PieceState Piece, ControllerState Input, Placement? Landed, int MovesAfterLanding);
 
+/// <summary>
+/// One step of a line clear as it looked on screen: the rows that were removed (they flash), the board
+/// right after the removal, and the board after each step in which loose cells fell one row.
+/// </summary>
+public sealed record ClearPass(IReadOnlyList<int> Rows, int Combo, BoardSnapshot AfterRemoval, IReadOnlyList<BoardSnapshot> FallSteps);
+
 /// <summary>Outcome of placing one piece, including everything it triggered.</summary>
-public readonly record struct StampResult(bool Valid, int Piece, int Lines, int Points);
+/// <param name="Combo">Most successive clears caused by this piece (1 for a plain clear, 0 for none).</param>
+/// <param name="Falls">Number of steps in which loose cells fell.</param>
+public readonly record struct StampResult(bool Valid, int Piece, int Lines, int Points, int Combo = 0, int Falls = 0);
 
 /// <summary>
 /// The rules-only part of one player: board, piece queue, pending garbage, score, lines and the
@@ -28,6 +36,8 @@ public sealed class PlayerSim
     private readonly int[] _queue = [-1, -1, -1, -1];
     private readonly int[] _attacks = new int[MaxPlayers];
     private readonly List<int> _pendingGarbage = [];
+    private readonly List<ClearPass> _lastClear = [];
+    private int _falls, _bestCombo;
 
     private readonly FallingPiece _falling;
     private PieceController? _input;
@@ -64,6 +74,12 @@ public sealed class PlayerSim
     public int Stamps { get; private set; }
     public int InvalidStamps { get; private set; }
     public int Deaths { get; private set; }
+
+    /// <summary>When true, <see cref="Stamp"/> keeps what the clear looked like in <see cref="LastClear"/>.</summary>
+    public bool RecordClearAnimation { get; set; }
+
+    /// <summary>The steps of the clear caused by the last <see cref="Stamp"/> (only if recorded).</summary>
+    public IReadOnlyList<ClearPass> LastClear => _lastClear;
 
     /// <summary>The piece in flight; moves are applied to it with <see cref="Move"/>.</summary>
     public FallingPiece Falling => _falling;
@@ -123,6 +139,7 @@ public sealed class PlayerSim
     /// <param name="horizontalRepeat">The player's horizontal repeat setting (0-3).</param>
     public void AttachInput(KeyStates keys, KeyBindings bindings, int horizontalRepeat, bool continuousDown = true, bool retryBlockedMoves = false)
     {
+        _falling.SetSideSpeed(LegacySpeeds.SideSpeed(horizontalRepeat));
         _input = new PieceController(_falling, keys, bindings, LegacySpeeds.RepeatDelay(horizontalRepeat), continuousDown, retryBlockedMoves);
         _input.BeginPiece();
     }
@@ -238,6 +255,8 @@ public sealed class PlayerSim
 
         // Player_stamp::init stacks three modules, so they run: line check, garbage, line check.
         int before = Score;
+        _lastClear.Clear();
+        _falls = _bestCombo = 0;
         int lines = ClearLines();
         if (_pendingGarbage.Count > 0)
         {
@@ -248,7 +267,7 @@ public sealed class PlayerSim
         _falling.Spawn(_queue[0]);
         Landed = null;
         _input?.BeginPiece();
-        return new StampResult(valid, piece, lines, Score - before);
+        return new StampResult(valid, piece, lines, Score - before, _bestCombo, _falls);
     }
 
     /// <summary>
@@ -260,15 +279,21 @@ public sealed class PlayerSim
         int lines = 0, combo = 0;
         while (true)
         {
-            int cleared = Board.ClearFullRows();
+            var rows = RecordClearAnimation ? new List<int>() : null;
+            int cleared = Board.ClearFullRows(rows);
             if (cleared == 0)
                 break;
             lines += cleared;
             combo++;
             if (Board.IsEmpty())
                 Score += LegacyScoring.CleanBoardBonus;
-            Board.DropUnsupported();
+            var afterRemoval = RecordClearAnimation ? Board.Snapshot() : null;
+            var steps = RecordClearAnimation ? new List<BoardSnapshot>() : null;
+            _falls += Board.DropUnsupported(steps);
+            if (afterRemoval is not null)
+                _lastClear.Add(new ClearPass(rows!, combo, afterRemoval, steps!));
         }
+        _bestCombo = Math.Max(_bestCombo, combo);
 
         if (lines > 0)
         {

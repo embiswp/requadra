@@ -29,12 +29,15 @@ public static class LegacySpeeds
     /// <summary>Frames between repeats of a held key, from a repeat setting (0-3).</summary>
     public static int RepeatDelay(int repeat) => repeat switch { 0 => 11, 1 => 6, 2 => 3, _ => 1 };
 
+    /// <summary>Sub-row units per frame that the drawn piece slides sideways towards its column.</summary>
+    public static int SideSpeed(int horizontalRepeat) => (18 << 4) / RepeatDelay(horizontalRepeat);
+
     /// <summary>Units per frame while the down key is held, from the player's vertical repeat setting (0-3).</summary>
     public static int SoftDrop(int verticalRepeat) => Math.Min(340 / RepeatDelay(verticalRepeat), 180);
 }
 
 /// <summary>Everything that changes while a piece falls, so a frame can be tried and undone.</summary>
-public readonly record struct PieceState(int Piece, int Column, int Row, int Rotation, int Y, int Frames);
+public readonly record struct PieceState(int Piece, int Column, int Row, int Rotation, int Y, int Frames, int X = 0);
 
 /// <summary>
 /// One piece falling one frame at a time. Each call to <see cref="Step"/> is one frame of
@@ -49,11 +52,14 @@ public sealed class FallingPiece
     public const int SpawnColumn = 7;
     public const int SpawnRow = 10;
     private const int RowUnits = 18 << 4;
+    private const int FirstColumn = Board.FirstColumn;
 
     private readonly Board _board;
     private int _gravity;
     private readonly int _softDrop;
+    private int _sideSpeed = LegacySpeeds.SideSpeed(2);
     private int _y; // vertical position in sub-row units
+    private int _x; // where the piece is drawn horizontally, sub-row units; it slides towards the column
 
     public FallingPiece(Board board, int gravity, int softDrop)
     {
@@ -66,6 +72,24 @@ public sealed class FallingPiece
     /// Vertical position in sub-row units (288 per row, 0 at row 12), for smooth drawing between rows.
     /// </summary>
     public int Y => _y;
+
+    /// <summary>
+    /// Horizontal position for drawing, in the same units as <see cref="Y"/> (288 per column, 0 at
+    /// column 4). Moving a piece changes its column at once; this value slides after it, which is only
+    /// a display effect (<c>bloc-&gt;x</c> in the C++ code).
+    /// </summary>
+    public int X => _x;
+
+    public void SetSideSpeed(int sideSpeed) => _sideSpeed = sideSpeed;
+
+    /// <summary>The row the piece would rest on if it dropped straight down (the landing shadow).</summary>
+    public int RestingRow()
+    {
+        int row = Row;
+        while (!Collides(Column, row + 1, Rotation))
+            row++;
+        return row;
+    }
 
     /// <summary>Changes how fast the piece falls, for a new level (<see cref="LegacySpeeds.Gravity"/>).</summary>
     public void SetGravity(int gravity) => _gravity = gravity;
@@ -84,10 +108,11 @@ public sealed class FallingPiece
         Rotation = 0;
         // The C++ constructor starts one cell-and-a-bit above the row it reports.
         _y = (SpawnRow - 12) * RowUnits - (17 << 4);
+        _x = (SpawnColumn - FirstColumn) * RowUnits;
         Frames = 0;
     }
 
-    public PieceState Save() => new(Piece, Column, Row, Rotation, _y, Frames);
+    public PieceState Save() => new(Piece, Column, Row, Rotation, _y, Frames, _x);
 
     public void Restore(PieceState state)
     {
@@ -97,6 +122,7 @@ public sealed class FallingPiece
         Rotation = state.Rotation;
         _y = state.Y;
         Frames = state.Frames;
+        _x = state.X;
     }
 
     /// <summary>
@@ -145,6 +171,7 @@ public sealed class FallingPiece
         while (!Collides(Column, Row + 1, Rotation))
             Row++;
         _y = (Row - 12) * RowUnits;
+        _x = (Column - FirstColumn) * RowUnits;
     }
 
     /// <summary>Moves one column left; false if something is in the way.</summary>
@@ -172,12 +199,34 @@ public sealed class FallingPiece
     public Placement? Gravity()
     {
         Frames++;
+        SlideDisplayX();
         if (Collides(Column, RowAt(_y + _gravity), Rotation))
             return new Placement(Column, Row, Rotation);
 
         _y += _gravity;
         Row = RowAt(_y);
         return null;
+    }
+
+    private void SlideDisplayX()
+    {
+        int target = (Column - FirstColumn) * RowUnits;
+        int next = _x;
+        if (next < target)
+        {
+            next += _sideSpeed;
+            if (next > target)
+                next = target;
+        }
+        if (next > target)
+        {
+            next -= _sideSpeed;
+            if (next < target)
+                next = target;
+        }
+        // Only slide if the piece would not pass through a block on the way (as in the C++ client).
+        if (!Collides(Column, RowAt(_y - (17 << 4) - 15), Rotation))
+            _x = next;
     }
 
     /// <summary>Board row that a vertical position falls into (<c>Player_base::calc_by</c>).</summary>

@@ -257,10 +257,9 @@ loop (see the next section); and wall kicks (see above).
   original steps its logic every 10 ms, so a front end calls `Update()` 100 times a second. The line-clear
   animation timing is an approximation (the original flashes about 17 frames and then lets cells fall one
   row every other frame); it is not verified.
-- **`src/Quadra.Desktop`** is a first playable MonoGame (DesktopGL) client: fixed 100 Hz logic step,
-  keyboard to key-state events, smooth falling pieces, joined blocks, score, lines, level, three next
-  pieces, pause and game over. It draws with plain rectangles and a built-in 3x5 pixel font, so it needs no
-  art or content pipeline yet. It targets net8.0 with roll-forward, so it also runs on a newer installed
+- **`src/Quadra.Desktop`** is a playable MonoGame (DesktopGL) client: fixed 100 Hz logic step, keyboard
+  to key-state events, pause and game over. It first drew with plain rectangles; the original art and sound
+  came next (see the sixth step). It targets net8.0 with roll-forward, so it also runs on a newer installed
   .NET.
 
 Checked here: the game logic by unit tests (including a bot that plays to game over), and the client by
@@ -271,11 +270,67 @@ by hand yet, so feel (key timing, speed, animation) is unchecked.
 Controls: Left / Right arrows, Down arrow (soft drop), Up arrow (rotate right), Z (rotate left), X (rotate
 twice), Space (drop), P (pause), Enter (new game after game over), Esc (quit).
 
+## Original art and sound (sixth step)
+
+The client now uses the original files from `legacy/`, linked into the build output (nothing is copied
+into the repository): ten level backgrounds, the level-up and pause signs, the two bitmap fonts and the
+sound effects.
+
+How the original draws, and how that was ported (all in `Quadra.Core`, so it is testable without a window):
+
+- **Blocks are not sprites.** The original paints every 18 x 18 cell with shade lines (a bevel) on the sides
+  that are not joined to a neighbouring cell, plus inner corners where two neighbours meet
+  (`raw_draw_bloc`, `raw_draw_bloc_corner`, `raw_small_draw_bloc`). `BlockPainter` is a port of that
+  drawing, pixel for pixel.
+- **The colours live in the background's palette.** Each of the 9 block colours has 8 shades at palette
+  entries 184 and up, and every level's background has its own ramps, so the blocks change look with the
+  level. `PngPalette` reads the palette chunk of the PNG and `BlockColors` builds the ramps (including the
+  original's swap of colours 7 and 8, which makes the landing shadow use the entries after the pieces).
+- **Layout.** The single-player screen uses the middle of the three frames in the background: board at
+  pixel (223, 37), score, lines and level at y = 403, 422 and 460, the next pieces in the strip above the
+  board (one full size, two small). `SinglePlayerView` paints all of it into a 640 x 480 overlay; the client
+  draws the background, the overlay and the pause sign into a 640 x 480 target and scales that to the
+  window, keeping the proportions.
+- **Fonts.** The `.fnt` files hold up to 109 glyphs of 8-bit pixels where 0 is transparent and 1 to 7 is a
+  brightness (dark outline to bright fill). `LegacyFont` parses them and draws them in any colour.
+- **Landing shadow and smooth movement.** The piece is drawn at its pixel position (1/16 pixel units, so it
+  falls smoothly) and slides sideways towards its column at the key-repeat speed; the shadow uses the
+  special colour 8. `FallingPiece` gained the display position and `RestingRow`.
+- **Line clears look like the original.** The sim now records what a clear looked like (rows removed, board
+  after removal, board after each fall step). `SinglePlayerGame` turns that into a frame-accurate timeline:
+  16 frames of flashing rows (white, white, red, red, ...), 2 frames, then 2 frames per row that loose cells
+  fall, 2 more and one line-check frame. The level-up banner rises for 220 frames.
+- **Sounds.** Each level has one of ten sets of five samples; the original varies volume, pan and pitch at
+  random on every play, and the pitch drops with every step of a combo. `SoundCues` reproduces those
+  formulas (volume -4096..0 and pan -4096..4096 become 0..1 and -1..1, a playback rate in Hz becomes a
+  pitch in octaves relative to the sample's own rate, read from the WAV header). Quirk kept: samples
+  recorded at 22050 Hz are played at about 11000 Hz, half speed, as in the original. Events (rotate,
+  stamp, line flash, cells fell, level up, game over, pause) come from `SinglePlayerGame.Events`.
+
+Checked here: unit tests on the real files (palette entries, bevel pixels, corner pixels, clipping, glyph
+brightness, WAV rates, that every sound file exists, the sound set per level, the cue formulas, and a game
+driven until a row flashes, with its timeline length and the flash colours in the painted overlay), and
+smoke runs with screenshots (level 1 and level 6, pause sign). Nobody has listened to it or played it by
+hand, so the sound balance and animation feel are unchecked.
+
+Differences from the original, on purpose or for now:
+
+- Panning follows the piece's side (right piece, right speaker). In the original code the sign looks
+  inverted; this is a guess about what was intended.
+- Master volume is 0.6; the original mixes quietly (samples are scaled to a quarter of full scale).
+- The background changes at once on a level-up; the original fades between pictures.
+- The left and right frames (block statistics and combo help) are empty.
+- Death uses the flash sound once instead of the original's animated board colouring.
+- No music; the original has none either, only effects.
+
+Open question: the repository's licence (LGPL) covers the whole source release including these files, but
+there is no separate statement for the art and sound samples, and the game's copyright notice names Ludus
+Design. Worth confirming with the upstream project before distributing builds that include them.
+
 ## Suggested next steps
 
-1. Play the client and tune the feel: line-clear animation, speed per level, key timing.
-2. Replace the rectangles with the original art and sounds (`legacy/images`, `legacy/sons`), loaded from
-   plain PNG and WAV files instead of the old `quadra.res` archive.
+1. Play the client and tune the feel: sound balance, speed per level, key timing.
+2. Fill the two side frames (block statistics and combo help) and add the fade between levels.
 3. Menus and settings (key bindings, repeat speed), high scores, then the network game: the packet
    decoder, the rules and the key layer are already in `Quadra.Core`; the server (Qserv) would be rebuilt
    in ASP.NET Core.
