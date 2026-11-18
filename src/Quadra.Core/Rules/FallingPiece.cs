@@ -26,13 +26,15 @@ public static class LegacySpeeds
     /// <summary>Sub-row units a piece falls per frame at a level; one row is 288 units.</summary>
     public static int Gravity(int level) => level <= 10 ? 4 + (level - 1) * 5 : 50 + (level - 10) * 3;
 
+    /// <summary>Frames between repeats of a held key, from a repeat setting (0-3).</summary>
+    public static int RepeatDelay(int repeat) => repeat switch { 0 => 11, 1 => 6, 2 => 3, _ => 1 };
+
     /// <summary>Units per frame while the down key is held, from the player's vertical repeat setting (0-3).</summary>
-    public static int SoftDrop(int verticalRepeat)
-    {
-        int delay = verticalRepeat switch { 0 => 11, 1 => 6, 2 => 3, _ => 1 };
-        return Math.Min(340 / delay, 180);
-    }
+    public static int SoftDrop(int verticalRepeat) => Math.Min(340 / RepeatDelay(verticalRepeat), 180);
 }
+
+/// <summary>Everything that changes while a piece falls, so a frame can be tried and undone.</summary>
+public readonly record struct PieceState(int Piece, int Column, int Row, int Rotation, int Y, int Frames);
 
 /// <summary>
 /// One piece falling one frame at a time. Each call to <see cref="Step"/> is one frame of
@@ -76,40 +78,45 @@ public sealed class FallingPiece
         Frames = 0;
     }
 
-    /// <summary>Plays one frame. Returns the placement if the piece lands during it.</summary>
+    public PieceState Save() => new(Piece, Column, Row, Rotation, _y, Frames);
+
+    public void Restore(PieceState state)
+    {
+        Piece = state.Piece;
+        Column = state.Column;
+        Row = state.Row;
+        Rotation = state.Rotation;
+        _y = state.Y;
+        Frames = state.Frames;
+    }
+
+    /// <summary>
+    /// Plays one frame from recorded action bits: the actions in the game's fixed order, then
+    /// gravity. Returns the placement if the piece lands during it.
+    /// </summary>
     public Placement? Step(MoveFlags moves)
     {
-        Frames++;
-        if ((moves & MoveFlags.RotateLeft) != 0) TryRotate(-1);
-        if ((moves & MoveFlags.RotateRight) != 0) TryRotate(1);
-        if ((moves & MoveFlags.RotateTwice) != 0) TryRotate(2);
-        if ((moves & MoveFlags.Down) != 0) SoftDrop();
+        if ((moves & MoveFlags.RotateLeft) != 0) RotateLeft();
+        if ((moves & MoveFlags.RotateRight) != 0) RotateRight();
+        if ((moves & MoveFlags.RotateTwice) != 0) RotateTwice();
+        if ((moves & MoveFlags.Down) != 0) MoveDown();
         if ((moves & MoveFlags.Drop) != 0) HardDrop();
-        if ((moves & MoveFlags.Left) != 0 && !Collides(Column - 1, Row, Rotation)) Column--;
-        if ((moves & MoveFlags.Right) != 0 && !Collides(Column + 1, Row, Rotation)) Column++;
-
-        if (Collides(Column, RowAt(_y + _gravity), Rotation))
-            return new Placement(Column, Row, Rotation);
-
-        _y += _gravity;
-        Row = RowAt(_y);
-        return null;
+        if ((moves & MoveFlags.Left) != 0) MoveLeft();
+        if ((moves & MoveFlags.Right) != 0) MoveRight();
+        return Gravity();
     }
 
-    /// <summary>Board row that a vertical position falls into (<c>Player_base::calc_by</c>).</summary>
-    private static int RowAt(int y) => ((((y + 15 + (12 * 18 << 4)) >> 4) + 17) / 18) & 0xFF;
+    // The individual actions are public so that an input layer can apply them in the same
+    // order and see which of them succeeded (key repeat depends on that).
 
-    // The C++ code passes uint8_t coordinates, so negative values wrap.
-    private bool Collides(int x, int y, int rotation) => _board.Collides(Piece, rotation, x & 0xFF, y & 0xFF);
+    public bool RotateLeft() => TryRotate(-1);
 
-    private void TryRotate(int delta)
-    {
-        int rotation = (Rotation + delta) & 3;
-        if (!Collides(Column, Row, rotation))
-            Rotation = rotation;
-    }
+    public bool RotateRight() => TryRotate(1);
 
-    private void SoftDrop()
+    public bool RotateTwice() => TryRotate(2);
+
+    /// <summary>One soft-drop step; a blocked step settles the piece so gravity lands it next frame.</summary>
+    public void MoveDown()
     {
         int row = RowAt(_y + _softDrop);
         if (!Collides(Column, row, Rotation))
@@ -124,10 +131,58 @@ public sealed class FallingPiece
         }
     }
 
-    private void HardDrop()
+    public void HardDrop()
     {
         while (!Collides(Column, Row + 1, Rotation))
             Row++;
         _y = (Row - 12) * RowUnits;
+    }
+
+    /// <summary>Moves one column left; false if something is in the way.</summary>
+    public bool MoveLeft()
+    {
+        if (Collides(Column - 1, Row, Rotation))
+            return false;
+        Column--;
+        return true;
+    }
+
+    /// <summary>Moves one column right; false if something is in the way.</summary>
+    public bool MoveRight()
+    {
+        if (Collides(Column + 1, Row, Rotation))
+            return false;
+        Column++;
+        return true;
+    }
+
+    /// <summary>
+    /// Ends a frame: gravity pulls the piece down, or the piece lands if the next step would
+    /// collide. Returns the placement when it lands.
+    /// </summary>
+    public Placement? Gravity()
+    {
+        Frames++;
+        if (Collides(Column, RowAt(_y + _gravity), Rotation))
+            return new Placement(Column, Row, Rotation);
+
+        _y += _gravity;
+        Row = RowAt(_y);
+        return null;
+    }
+
+    /// <summary>Board row that a vertical position falls into (<c>Player_base::calc_by</c>).</summary>
+    private static int RowAt(int y) => ((((y + 15 + (12 * 18 << 4)) >> 4) + 17) / 18) & 0xFF;
+
+    // The C++ code passes uint8_t coordinates, so negative values wrap.
+    private bool Collides(int x, int y, int rotation) => _board.Collides(Piece, rotation, x & 0xFF, y & 0xFF);
+
+    private bool TryRotate(int delta)
+    {
+        int rotation = (Rotation + delta) & 3;
+        if (Collides(Column, Row, rotation))
+            return false;
+        Rotation = rotation;
+        return true;
     }
 }

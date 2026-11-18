@@ -331,6 +331,48 @@ public class ReplayTests
         Assert.Equal(demo.Packets.Count(d => d.Packet is Quadra.Core.Net.StampBlockPacket), players.Sum(p => p.Stamps));
     }
 
+    [Theory]
+    [InlineData("demo00.rec")]
+    [InlineData("demo01.rec")]
+    [InlineData("demo02.rec")]
+    [InlineData("demo03.rec")]
+    public void Key_schedules_reproduce_the_recorded_frames_and_the_game_still_matches(string name)
+    {
+        var demo = DemoFile.Load(DemoPath(name));
+        var (players, stats) = KeyScheduleOracle.Replay(demo);
+
+        // The figures must still equal the stored summary, whatever the key layer did.
+        foreach (var p in players)
+        {
+            int i = Enumerable.Range(0, 8).First(n => demo.Summary.GetValueOrDefault($"players/{n}/name") == p.Name);
+            Assert.Equal(int.Parse(demo.Summary[$"players/{i}/score"]), p.Score);
+            Assert.Equal(int.Parse(demo.Summary[$"players/{i}/lines"]), p.Lines);
+            Assert.Equal(int.Parse(demo.Summary[$"players/{i}/frags"]), p.Frags);
+        }
+
+        // Every piece must be reproduced frame by frame: each recorded byte and each landing.
+        Assert.True(stats.Frames > 1000);
+        Assert.True(stats.Unexplained.Count == 0,
+            $"{stats.Unexplained.Count} of {stats.Pieces} pieces not reproduced:\n{string.Join('\n', stats.Unexplained)}");
+    }
+
+    [Fact]
+    public void The_key_repeat_model_explains_a_large_share_of_the_recorded_direction_moves()
+    {
+        int attempts = 0, auto = 0, pieces = 0;
+        foreach (var name in new[] { "demo00.rec", "demo01.rec", "demo02.rec", "demo03.rec" })
+        {
+            var (_, stats) = KeyScheduleOracle.Replay(DemoFile.Load(DemoPath(name)));
+            pieces += stats.Pieces;
+            attempts += stats.DirectionAttempts;
+            auto += stats.AutoRepeats;
+        }
+        // If the repeat delays were wrong, the controller's predicted repeats would almost never line up
+        // with the recorded ones, and the oracle would fall back to taps. Measured: 9814 of 13632 (72 %).
+        Assert.Equal(2409, pieces);
+        Assert.True(auto * 10 > attempts * 6, $"only {auto} of {attempts} direction moves were produced by key repeat");
+    }
+
     [Fact]
     public void Single_player_demo_matches_the_known_figures()
     {

@@ -134,6 +134,7 @@ The two fixes that resolved the multiplayer divergence:
 | `Board.cs` | playfield, placement checks, row clearing, support/gravity pass, garbage rows | `canvas.cc`, `player.cc` (`check_nb_line`, `Player_check_link`, `Player_add_bonus`) |
 | `LegacyScoring.cs` | line-clear points, clean-board bonus | `canvas.cc` (`give_line`), `player.cc` (`check_clean`) |
 | `FallingPiece.cs` | one piece falling frame by frame from `Moves` bytes, speeds | `player.cc` (`Player_process_key::step`, `move_down`, `drop_down`, rotate and move functions), `canvas.cc` (`calc_speed`) |
+| `Input/KeyStates.cs`, `KeyBindings.cs`, `PieceController.cs` | keys to piece actions per frame, key repeat | `player.cc` (`Player_process_key::keyboard_control`), `canvas.cc` (`check_key`, `clear_key`, `unrelease_key`), `input.cc` |
 | `PlayerSim.cs` | one player: piece queue, stamping, garbage queue, attacker bookkeeping, score, lines | `player.cc`, `canvas.cc` (`add_packet`) |
 | `Demos/DemoReplay.cs` | replays a demo through the above | `recording.cc` |
 
@@ -178,13 +179,65 @@ Not covered: the key-to-action layer (key repeat, held keys), the death check wh
 collides at spawn (the replay follows the `Dead` packets), and speed changes by level (levels do not
 change in these games).
 
+## Input layer (fourth step)
+
+`Quadra.Core/Input` turns key states into the per-frame piece actions, so a keyboard, gamepad or touch
+front end only has to report "key N went down / up" (keys are plain integers) and call
+`PlayerSim.Frame()` once per frame in which the piece is in play. It returns the action byte (what a
+client would record or send as a `Moves` packet) and the landing, if any.
+
+Behaviour, ported from `keyboard_control`:
+
+- Key state is `Pressed` on key-down and `Released` on key-up; the game clears what it has handled.
+  A tap that ends before the next frame is seen as `Released` only.
+- **Rotations happen when the key is released**, not pressed. If two rotations share a key (the
+  default setup uses Up for both) the first one in order wins and clears the key.
+- **Down** acts every frame while held, or once for a tap. **Drop** acts once on key-down.
+- **Left / Right** act at once, repeat after `delay + 10` frames, then every `delay` frames
+  (`delay` = 11, 6, 3 or 1 for repeat setting 0 to 3). Pressing both cancels both. The repeat starts
+  over for every new piece.
+- A stale drop key is discarded when a new piece appears; a held down key is too, unless "continuous
+  down" is on.
+
+How it was checked. The demos contain the resulting `Moves` bytes, not the keys. The test oracle
+(`tests/Quadra.Tests/KeyScheduleOracle.cs`) works backwards: for each recorded byte it invents the
+key presses that should produce it, drives the real controller, and compares every frame and every
+landing. Taps always work, so the oracle holds a direction key whenever the controller's own repeat
+predicts the next recorded attempt; the share of attempts explained that way is what tests the repeat
+constants.
+
+| Measure (all four demos) | Result |
+|---|---|
+| pieces reproduced frame by frame | **2409 of 2409** (183,265 frames) |
+| direction moves produced by key repeat itself | 9814 of 13632 (72 %) |
+| score, lines, frags | still equal the summaries |
+| gap between repeats (delay 3) | 4814 at 3 frames, 1055 at 13 (`delay + 10`); 28 at 12 and 47 at 14 |
+| gap between repeats (delay 1) | 3879 at 1 frame, 236 at 11; 5 at 12 and 8 at 10 |
+| mutation: `delay + 9` instead of `+ 10` | caught by 7 tests, including 3 demos |
+
+What the demos taught us:
+
+- **The 1.1.0 clients did not retry a blocked move.** The current C++ code retries a blocked left or
+  right move on the next frame. With that rule, 2 of 2409 pieces could not be reproduced (a first move
+  against a wall followed by the next repeat exactly 11 frames later). Without it, all 2409 are. The
+  rule is a `retryBlockedMoves` option, default on (current client), off for the 1.1.0 demos. The gap
+  histogram agrees: a player holding a key against a wall with delay 3 would show constant 1-frame gaps
+  otherwise, and there are only 64 of those.
+- **A round can end while a piece is falling.** Its `Moves` bytes are never followed by a stamp and the
+  client discards the piece on respawn. Replays must discard them too (the oracle does).
+
+Not covered: the throttle in the C++ client that skips key handling when the game runs ahead of the
+display (it depends on video frame counters, and a fixed-timestep game does not need it); frames outside
+the piece's life (the pause before it appears, the line-clear animation), which belong to the game
+loop; wall kicks (see above); and the death check when a new piece appears on top of blocks.
+
 ## Suggested next steps
 
 1. Decide which rule sets the new game must support. The bundled demos only cover the 1.1 rules
    (net version 20, survivor). Newer rules (net versions 23 and 24, blind and potato modes) have no
    recorded demos, so they would need new test data, for example recorded by the C++ client.
-2. Add the layer above the move bits: keyboard (or touch) input to per-frame actions with key
-   repeat, the spawn-collision death check, and a drop-points formula for the new rules. These need
-   decisions about the new game, not just more porting.
+2. Decide the rules that need a design choice, not more porting: the spawn-collision death check,
+   a drop-points formula, wall kicks, and whether the new game keeps the 1.1.0 key-repeat behaviour
+   or the current client's blocked-move retry (both are supported).
 3. Start the MonoGame client on top of `Quadra.Core`.
 4. Android/iOS planning remains a separate task.

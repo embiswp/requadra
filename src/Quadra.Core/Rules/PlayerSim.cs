@@ -1,4 +1,9 @@
+using Quadra.Core.Input;
+
 namespace Quadra.Core.Rules;
+
+/// <summary>Everything about the current piece that a frame can change, so a frame can be tried and undone.</summary>
+public readonly record struct FrameSnapshot(PieceState Piece, ControllerState Input, Placement? Landed, int MovesAfterLanding);
 
 /// <summary>Outcome of placing one piece, including everything it triggered.</summary>
 public readonly record struct StampResult(bool Valid, int Piece, int Lines, int Points);
@@ -23,6 +28,7 @@ public sealed class PlayerSim
     private readonly List<int> _pendingGarbage = [];
 
     private readonly FallingPiece _falling;
+    private PieceController? _input;
 
     /// <param name="gameSeed">Seed from the game packet.</param>
     /// <param name="level">Level the game starts at (no level-up is supported).</param>
@@ -77,10 +83,53 @@ public sealed class PlayerSim
             Shift();
         _falling.Spawn(_queue[0]);
         Landed = null;
+        _input?.BeginPiece();
+    }
+
+    /// <summary>The key-to-action layer, if <see cref="AttachInput"/> was called.</summary>
+    public PieceController? Input => _input;
+
+    /// <summary>
+    /// Lets <see cref="Frame"/> drive the piece from key states (for a player at the keyboard).
+    /// </summary>
+    /// <param name="horizontalRepeat">The player's horizontal repeat setting (0-3).</param>
+    public void AttachInput(KeyStates keys, KeyBindings bindings, int horizontalRepeat, bool continuousDown = true, bool retryBlockedMoves = true)
+    {
+        _input = new PieceController(_falling, keys, bindings, LegacySpeeds.RepeatDelay(horizontalRepeat), continuousDown, retryBlockedMoves);
+        _input.BeginPiece();
     }
 
     /// <summary>
-    /// Plays one frame of the current piece (one byte of a <c>Moves</c> packet). Returns the
+    /// Plays one frame of the current piece from the key states. Returns what was attempted (the byte
+    /// to record or send) and where the piece landed, if it did.
+    /// </summary>
+    public FrameResult Frame()
+    {
+        if (_input is null)
+            throw new InvalidOperationException("No input attached; call AttachInput first.");
+        if (Landed is not null)
+        {
+            MovesAfterLanding++;
+            return new FrameResult(MoveFlags.None, Landed);
+        }
+        var result = _input.Frame();
+        Landed = result.Landed;
+        return result;
+    }
+
+    public FrameSnapshot SaveFrame() =>
+        new(_falling.Save(), _input?.Save() ?? default, Landed, MovesAfterLanding);
+
+    public void RestoreFrame(FrameSnapshot snapshot)
+    {
+        _falling.Restore(snapshot.Piece);
+        _input?.Restore(snapshot.Input);
+        Landed = snapshot.Landed;
+        MovesAfterLanding = snapshot.MovesAfterLanding;
+    }
+
+    /// <summary>
+    /// Plays one frame of the current piece from recorded action bits (one byte of a <c>Moves</c> packet). Returns the
     /// placement when the piece lands; it is then stamped with <see cref="Stamp"/>.
     /// </summary>
     public Placement? Move(MoveFlags moves)
@@ -168,6 +217,7 @@ public sealed class PlayerSim
         }
         _falling.Spawn(_queue[0]);
         Landed = null;
+        _input?.BeginPiece();
         return new StampResult(valid, piece, lines, Score - before);
     }
 
