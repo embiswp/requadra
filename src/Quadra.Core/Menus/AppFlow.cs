@@ -9,6 +9,7 @@ public enum Screen
     Setup,
     Options,
     HighScores,
+    Lobby,
     Playing,
 }
 
@@ -38,6 +39,7 @@ public sealed class AppFlow
         _saveScores = saveScores;
         Text = textForLanguage(settings.Language);
         Setup = new SetupModel(settings, Text);
+        Lobby = new LobbyModel(settings);
         Menu = MenuLayouts.Main(settings.Language, imageSize);
     }
 
@@ -47,6 +49,49 @@ public sealed class AppFlow
     public Screen Current { get; private set; } = Screen.Main;
     public MenuScreen Menu { get; private set; }
     public SetupModel Setup { get; private set; }
+    public LobbyModel Lobby { get; }
+
+    private NetworkRequest? _networkRequest;
+    private bool _refreshRequested;
+
+    /// <summary>A network game the player chose (host or join); the front end starts it. Cleared by reading.</summary>
+    public NetworkRequest? TakeNetworkRequest()
+    {
+        var request = _networkRequest;
+        _networkRequest = null;
+        return request;
+    }
+
+    /// <summary>The player asked for the game list to be fetched again. Cleared by reading.</summary>
+    public bool TakeRefreshRequest()
+    {
+        bool asked = _refreshRequested;
+        _refreshRequested = false;
+        return asked;
+    }
+
+    /// <summary>The list server answered: shows the games, keeping the focus where it was if it can.</summary>
+    public void SetLobbyGames(IReadOnlyList<Qserv.ListedGame> games)
+    {
+        Lobby.SetGames(games);
+        RebuildLobbyMenu();
+    }
+
+    private void RebuildLobbyMenu()
+    {
+        string? focused = Menu.FocusedItem?.Id;
+        Menu = MenuLayouts.Lobby(Lobby.Games.Count);
+        if (focused is not null)
+            Menu.FocusId(focused);
+    }
+
+    /// <summary>A network game has ended or could not start; back to the lobby.</summary>
+    public void ReturnToLobby(string? status = null)
+    {
+        Show(Screen.Lobby);
+        if (status is not null)
+            Lobby.Status = status;
+    }
 
     /// <summary>A short message about something that is not available, shown until the next action.</summary>
     public string? Notice { get; private set; }
@@ -69,6 +114,7 @@ public sealed class AppFlow
             case Screen.Setup: ActivateSetup(id); break;
             case Screen.Options: ActivateOptions(id); break;
             case Screen.HighScores: ActivateHighScores(id); break;
+            case Screen.Lobby: ActivateLobby(id); break;
         }
     }
 
@@ -95,6 +141,12 @@ public sealed class AppFlow
                 if (!Setup.Cancel())
                     LeaveSetup();
                 break;
+            case Screen.Lobby:
+                if (Lobby.Edit != LobbyEdit.None)
+                    FinishLobbyEdit();
+                else
+                    Show(Screen.Main);
+                break;
             case Screen.Options:
             case Screen.HighScores:
             case Screen.Playing:
@@ -119,11 +171,18 @@ public sealed class AppFlow
         Notice = null;
         if (screen != Screen.HighScores)
             HighlightedRank = -1;
+        if (screen == Screen.Lobby)
+        {
+            Lobby.Commit();
+            _refreshRequested = Lobby.ServerUrl.Length > 0;
+            Lobby.Status = Lobby.ServerUrl.Length > 0 ? "Fetching the game list..." : "No game list server is set; join by address";
+        }
         Menu = screen switch
         {
             Screen.Setup => MenuLayouts.Setup(Language, _imageSize),
             Screen.Options => MenuLayouts.Options(),
             Screen.HighScores => MenuLayouts.HighScores(Language, playAgain, _imageSize),
+            Screen.Lobby => MenuLayouts.Lobby(Lobby.Games.Count),
             _ => MenuLayouts.Main(Language, _imageSize),
         };
     }
@@ -137,7 +196,7 @@ public sealed class AppFlow
             case "setup": Show(Screen.Setup); break;
             case "options": Show(Screen.Options); break;
             case "quit": QuitRequested = true; break;
-            case "multi":
+            case "multi": Show(Screen.Lobby); break;
             case "demo":
             case "help":
                 Notice = NotAvailableYet[Language];
@@ -182,5 +241,45 @@ public sealed class AppFlow
             Show(Screen.Playing);
         else if (id == "back")
             Show(Screen.Main);
+    }
+
+    private void ActivateLobby(string id)
+    {
+        if (Lobby.Edit != LobbyEdit.None)
+        {
+            FinishLobbyEdit();      // a click anywhere else ends the typing, then does its own thing
+        }
+
+        if (id.StartsWith("game.", StringComparison.Ordinal) && int.TryParse(id.AsSpan(5), out int index) && index < Lobby.Games.Count)
+        {
+            _networkRequest = LobbyModel.JoinTarget(Lobby.Games[index]);
+            return;
+        }
+
+        switch (id)
+        {
+            case "host": _networkRequest = new NetworkRequest(true, "127.0.0.1", LobbyModel.DefaultPort); break;
+            case "refresh":
+                _refreshRequested = true;
+                Lobby.Status = Lobby.ServerUrl.Length > 0 ? "Fetching the game list..." : "No game list server is set";
+                break;
+            case "address" or "server": Lobby.BeginEdit(id); break;
+            case "join":
+                _networkRequest = LobbyModel.ParseAddress(Lobby.Address);
+                if (_networkRequest is null)
+                    Lobby.Status = "Type an address like host or host:port";
+                break;
+            case "back": Show(Screen.Main); break;
+        }
+    }
+
+    private void FinishLobbyEdit()
+    {
+        if (Lobby.Commit() == LobbyEdit.Server)
+        {
+            _refreshRequested = Lobby.ServerUrl.Length > 0;
+            Lobby.Status = Lobby.ServerUrl.Length > 0 ? "Fetching the game list..." : "No game list server is set";
+        }
+        _saveSettings();
     }
 }

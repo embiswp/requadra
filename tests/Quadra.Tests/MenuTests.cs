@@ -474,7 +474,7 @@ public class AppFlowTests
     public void Items_that_are_not_built_yet_show_a_notice_in_the_chosen_language()
     {
         var en = MenuFixtures.NewFlow(0);
-        en.Activate("multi");
+        en.Activate("demo");
         Assert.Equal("Not available yet", en.Notice);
         Assert.Equal(Screen.Main, en.Current);
         en.Activate("demo");
@@ -485,7 +485,7 @@ public class AppFlowTests
         Assert.Null(en.Notice);
 
         var fr = MenuFixtures.NewFlow(1);
-        fr.Activate("multi");
+        fr.Activate("demo");
         Assert.Equal("Pas encore disponible", fr.Notice);
     }
 
@@ -671,7 +671,7 @@ public class MenuPainterTests
     public void A_notice_is_shown_near_the_bottom_of_the_main_menu()
     {
         var (painter, flow, _) = Setup("debuto.png");
-        flow.Activate("multi");
+        flow.Activate("demo");
         painter.Paint(flow);
         Assert.True(AnyPixel(painter.Overlay, 200, 450, 240, 24));
     }

@@ -48,6 +48,7 @@ public sealed class MenuPainter
             case Screen.Setup: PaintSetup(flow, caretOn); break;
             case Screen.Options: PaintOptions(flow); break;
             case Screen.HighScores: PaintHighScores(flow); break;
+            case Screen.Lobby: PaintLobby(flow, caretOn); break;
         }
     }
 
@@ -102,6 +103,47 @@ public sealed class MenuPainter
             centered: true, highlighted: flow.Menu.FocusedItem?.Id == "language");
         BackButton(flow, flow.Menu.FocusedItem?.Id == "back");
     }
+
+    // ---- lobby --------------------------------------------------------------------------------------
+
+    private void PaintLobby(AppFlow flow, bool caretOn)
+    {
+        var lobby = flow.Lobby;
+        string? focused = flow.Menu.FocusedItem?.Id;
+        const string title = "Multi-player game";
+        _text.Draw(Overlay, title, (SinglePlayerView.ScreenWidth - _text.Measure(title)) / 2, 20, White);
+
+        int x = MenuLayouts.LobbyListX;
+        _text.Draw(Overlay, "Game", x + 4, MenuLayouts.LobbyListY - 24, Grey);
+        _text.Draw(Overlay, "Players", x + 340, MenuLayouts.LobbyListY - 24, Grey);
+        _text.Draw(Overlay, "State", x + 450, MenuLayouts.LobbyListY - 24, Grey);
+        for (int i = 0; i < Math.Min(lobby.Games.Count, MenuLayouts.LobbyRows); i++)
+        {
+            var parts = LobbyModel.Describe(lobby.Games[i]).Split('|');
+            int y = MenuLayouts.LobbyListY + MenuLayouts.LobbyRowStep * i;
+            var color = focused == $"game.{i}" ? Yellow : White;
+            _text.Draw(Overlay, parts[0], x + 4, y, color);
+            _text.Draw(Overlay, parts[1], x + 340, y, color);
+            _text.Draw(Overlay, parts[2], x + 450, y, color);
+        }
+
+        _text.Draw(Overlay, "Host a game", MenuLayouts.LobbyHostX, MenuLayouts.LobbyButtonY + 2, focused == "host" ? White : Yellow);
+        _text.Draw(Overlay, "Refresh", MenuLayouts.LobbyRefreshX, MenuLayouts.LobbyButtonY + 2, focused == "refresh" ? White : Yellow);
+
+        _text.Draw(Overlay, "Address", MenuLayouts.LobbyHostX, MenuLayouts.LobbyAddressY + 2, Grey);
+        Panel(MenuLayouts.LobbyFieldX, MenuLayouts.LobbyAddressY, MenuLayouts.LobbyAddressWidth,
+            Caret(lobby.FieldText("address"), caretOn), centered: false, highlighted: focused == "address");
+        _text.Draw(Overlay, "Join", MenuLayouts.LobbyJoinX, MenuLayouts.LobbyAddressY + 2, focused == "join" ? White : Yellow);
+
+        _text.Draw(Overlay, "Game list", MenuLayouts.LobbyHostX, MenuLayouts.LobbyServerY + 2, Grey);
+        Panel(MenuLayouts.LobbyFieldX, MenuLayouts.LobbyServerY, MenuLayouts.LobbyServerWidth,
+            Caret(lobby.FieldText("server"), caretOn), centered: false, highlighted: focused == "server");
+
+        _text.Draw(Overlay, lobby.Status, MenuLayouts.LobbyHostX, MenuLayouts.LobbyStatusY, Grey);
+        BackButton(flow, focused == "back");
+    }
+
+    private static string Caret(string value, bool caretOn) => !caretOn && value.EndsWith('_') ? value[..^1] : value;
 
     // ---- high scores --------------------------------------------------------------------------------
 

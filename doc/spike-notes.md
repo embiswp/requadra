@@ -471,11 +471,25 @@ stamped piece, name and score). Known gaps: line clears are not animated, remote
 shown (only stamps), the level does not rise in a network game (`MultiplayerState` builds players without
 `levelUp`), there is no lobby or menu entry, and the countdown is shown as plain text.
 
+### Lobby (ninth step)
+
+The Multi-player item on the main menu opens a lobby (`Screen.Lobby`, `LobbyModel`): the games the list
+server reports (name, players, state), Host a game, Refresh, a typed address to join (`host[:port]`) and the
+list server's URL. Both fields are kept in the settings file (`ListServer`, `LastAddress`). A game hosted from the lobby
+announces itself to the list server; Escape in the game returns to the lobby. The screen is plain text on the
+options screen's background; the original's lobby is built from pictures that were not reproduced, and its
+texts are English only.
+
+Checked: `LobbyTests` (the flow, typing, address parsing) and a run of the real list server with two windows:
+one hosted from the lobby, the other refreshed, clicked the listed game and joined it. The default list server
+is empty: the original's address (Ludus Design) is not known to be alive, so one has to be typed in or run
+with `Quadra.Server`. Not done: showing the players of a listed game before joining, ping times, LAN discovery.
+
 ## Suggested next steps
 
 1. Play the client and tune the feel: sound balance, speed per level, key timing, menu use.
-2. The rest of the network game on screen: a lobby in the menus (host or join, game list from the server,
-   player list, start), the clear animation (which also fixes the garbage order above), remote falling
+2. The rest of the network game on screen: a waiting room (player list, team and handicap choice, chat),
+   the clear animation (which also fixes the garbage order above), remote falling
    pieces (needs the client to send `Moves`), level-up. Then round management on the host.
 3. Try the host and client against the C++ game to see whether they talk to each other.
 4. Late join (`Download`) and the rest of the list under "not done".

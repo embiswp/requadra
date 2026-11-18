@@ -5,6 +5,8 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Input;
 using Quadra.Core.Assets;
 using Quadra.Core.Game;
+using Quadra.Core.Menus;
+using Quadra.Core.Qserv;
 using Quadra.Core.Net;
 using Quadra.Core.Rendering;
 
@@ -28,36 +30,89 @@ public sealed partial class QuadraGame
     private string _networkMessage = "";
     private int _networkLevel;
 
-    private void StartNetwork()
+    private bool _fromMenu;
+    private Task<IReadOnlyList<ListedGame>>? _listing;
+    private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(8) };
+
+    /// <summary>Starts a network game: <c>--host</c>/<c>--join</c> from the command line, or a choice on the lobby screen.</summary>
+    private void StartNetwork(NetworkRequest request, bool fromMenu)
     {
-        string host;
-        int port;
-        if (_options.Host is { } hostPort)
+        _fromMenu = fromMenu;
+        string host = request.Address;
+        int port = request.Port;
+        if (request.Host)
         {
-            port = hostPort == "" ? TcpGameServer.DefaultPort : int.Parse(hostPort);
             var gameHost = new GameHost(new HostRules { Name = $"{_settings.CurrentPlayer.Name}'s game", Seed = Environment.TickCount });
-            _server = new TcpGameServer(gameHost, IPAddress.Any, port);
-            _server.Start();
+            try
+            {
+                _server = new TcpGameServer(gameHost, IPAddress.Any, port);
+                _server.Start();
+            }
+            catch (System.Net.Sockets.SocketException e)
+            {
+                _server = null;
+                _flow.ReturnToLobby($"Could not host on port {port}: {e.Message}");
+                return;
+            }
             port = _server.Port;
             host = "127.0.0.1";
-        }
-        else
-        {
-            string target = _options.Join!;
-            int colon = target.LastIndexOf(':');
-            host = colon < 0 ? target : target[..colon];
-            port = colon < 0 ? TcpGameServer.DefaultPort : int.Parse(target[(colon + 1)..]);
+            AnnounceHost(gameHost, port);
         }
 
         _networkActive = true;
+        _netGame = null;
+        _accumulatorMs = 0;
+        CreateBindings();
         _stage = NetworkStage.Connecting;
         _networkMessage = $"Connecting to {host}:{port}...";
         _connecting = Task.Run(() => TcpGameLink.ConnectAsync(host, port));
         ShowLevel(1);
     }
 
+    private void StartNetworkFromOptions()
+    {
+        var request = _options.Host is { } hostPort
+            ? new NetworkRequest(true, "127.0.0.1", hostPort == "" ? TcpGameServer.DefaultPort : int.Parse(hostPort))
+            : LobbyModel.ParseAddress(_options.Join!) ?? throw new ArgumentException("--join needs host or host:port");
+        StartNetwork(request, fromMenu: false);
+    }
+
+    // ---- the lobby: the game list from the list server ---------------------------------------------------
+
+    private HostAnnouncer? _announcer;
+
+    /// <summary>A hosted game announces itself to the list server, if one is set.</summary>
+    private void AnnounceHost(GameHost host, int port)
+    {
+        if (_settings.ListServer.Length > 0 && Uri.TryCreate(_settings.ListServer, UriKind.Absolute, out var uri))
+            _announcer = new HostAnnouncer(host, new QservClient(_http, uri), port);
+    }
+
+    private void UpdateLobby()
+    {
+        if (_listing is { IsCompleted: true } done)
+        {
+            _listing = null;
+            if (done.IsFaulted)
+                _flow.Lobby.Status = "Could not fetch the list: " + done.Exception!.GetBaseException().Message;
+            else if (done.IsCompletedSuccessfully)
+                _flow.SetLobbyGames(done.Result);
+        }
+
+        if (_flow.TakeRefreshRequest() && _listing is null
+            && Uri.TryCreate(_settings.ListServer, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https")
+            _listing = new QservClient(_http, uri).GetGamesAsync();
+        else if (_flow.Lobby.ServerUrl.Length > 0 && !Uri.TryCreate(_settings.ListServer, UriKind.Absolute, out _))
+            _flow.Lobby.Status = "The game list address is not a URL";
+
+        if (_flow.TakeNetworkRequest() is { } request)
+            StartNetwork(request, fromMenu: true);
+    }
+
     private void StopNetwork()
     {
+        _announcer?.DisposeAsync().AsTask().Wait(3000);
+        _announcer = null;
         _netGame = null;
         if (_network is { } link)
         {
@@ -74,7 +129,11 @@ public sealed partial class QuadraGame
         if (Pressed(keyboard, Keys.Escape))
         {
             StopNetwork();
-            Exit();
+            _networkActive = false;
+            if (_fromMenu)
+                _flow.ReturnToLobby();
+            else
+                Exit();
             return;
         }
 

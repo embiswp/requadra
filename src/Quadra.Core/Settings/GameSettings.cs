@@ -82,6 +82,12 @@ public sealed class GameSettings
     /// <summary>0 English, 1 French.</summary>
     public int Language { get; set; }
 
+    /// <summary>Address of the game list server (its <c>qserv</c> URL); empty for none.</summary>
+    public string ListServer { get; set; } = "";
+
+    /// <summary>The last <c>host[:port]</c> typed on the multi-player screen.</summary>
+    public string LastAddress { get; set; } = "";
+
     [JsonIgnore]
     public PlayerSettings CurrentPlayer => Players[SetupPlayer];
 
@@ -103,6 +109,8 @@ public sealed class GameSettings
             Players[i].Normalize(i);
         SetupPlayer = Math.Clamp(SetupPlayer, 0, PlayerCount - 1);
         Language = Math.Clamp(Language, 0, LanguageCount - 1);
+        ListServer = (ListServer ?? "").Trim();
+        LastAddress = (LastAddress ?? "").Trim();
     }
 }
 

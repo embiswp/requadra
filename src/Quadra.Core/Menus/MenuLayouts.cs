@@ -143,4 +143,27 @@ public static class MenuLayouts
 
     /// <summary>Where the table of local scores starts: headings at y = 256, the rows 20 below, 21 apart.</summary>
     public const int ScoreTableX = 100, ScoreHeadingY = 256, ScoreRowY = 276, ScoreRowStep = 21;
+
+    // ---- multi-player lobby ----------------------------------------------------------------------------
+    // The original's lobby is made of pictures; this one is text on the same plain screen as the options.
+
+    public const int LobbyRows = 10;
+    public const int LobbyListX = 40, LobbyListY = 84, LobbyListWidth = 560, LobbyRowStep = 22;
+    public const int LobbyButtonY = 330, LobbyAddressY = 366, LobbyServerY = 402, LobbyStatusY = 434;
+    public const int LobbyHostX = 40, LobbyHostWidth = 150, LobbyRefreshX = 220, LobbyRefreshWidth = 100;
+    public const int LobbyFieldX = 150, LobbyAddressWidth = 250, LobbyServerWidth = 450, LobbyJoinX = 420, LobbyJoinWidth = 60;
+
+    public static MenuScreen Lobby(int gameCount)
+    {
+        var items = new List<MenuItem>();
+        for (int i = 0; i < Math.Min(gameCount, LobbyRows); i++)
+            items.Add(new MenuItem($"game.{i}", LobbyListX, LobbyListY + LobbyRowStep * i, LobbyListWidth, 20));
+        items.Add(new MenuItem("host", LobbyHostX, LobbyButtonY, LobbyHostWidth, 22));
+        items.Add(new MenuItem("refresh", LobbyRefreshX, LobbyButtonY, LobbyRefreshWidth, 22));
+        items.Add(new MenuItem("address", LobbyFieldX, LobbyAddressY, LobbyAddressWidth, 22));
+        items.Add(new MenuItem("join", LobbyJoinX, LobbyAddressY, LobbyJoinWidth, 22));
+        items.Add(new MenuItem("server", LobbyFieldX, LobbyServerY, LobbyServerWidth, 22));
+        items.Add(new MenuItem("back", BackButtonX, BackButtonY, BackButtonWidth, BackButtonHeight));
+        return new MenuScreen(items);
+    }
 }

@@ -127,7 +127,7 @@ public sealed partial class QuadraGame : Game
         }
         _shownScreen = _flow.Current;
         if (_options.Host is not null || _options.Join is not null)
-            StartNetwork();
+            StartNetworkFromOptions();
     }
 
     protected override void UnloadContent()
@@ -153,6 +153,8 @@ public sealed partial class QuadraGame : Game
         else
             UpdateMenu(keyboard, mouse);
 
+        if (_flow.Current == Screen.Lobby && !_networkActive)
+            UpdateLobby();
         if (_flow.QuitRequested)
             Exit();
         if (_flow.Current != _shownScreen)
@@ -274,6 +276,17 @@ public sealed partial class QuadraGame : Game
             return;
         }
 
+        if (_flow.Current == Screen.Lobby && _flow.Lobby.Edit != LobbyEdit.None)
+        {
+            if (Pressed(keyboard, Keys.Back))
+                _flow.Lobby.Backspace();
+            if (Pressed(keyboard, Keys.Enter))
+                _flow.Back();       // Enter and Escape both end the typing; the text stays
+            if (Pressed(keyboard, Keys.Escape))
+                _flow.Back();
+            return;
+        }
+
         if (Pressed(keyboard, Keys.Down))
             Moved(menu, 1);
         if (Pressed(keyboard, Keys.Up))
@@ -309,6 +322,8 @@ public sealed partial class QuadraGame : Game
 
     private void OnTextInput(object? sender, TextInputEventArgs e)
     {
+        if (_flow is { Current: Screen.Lobby })
+            _flow.Lobby.TypeCharacter(e.Character);
         if (_flow is { Current: Screen.Setup })
             _flow.Setup.TypeCharacter(e.Character);
     }
@@ -518,7 +533,8 @@ public sealed partial class QuadraGame : Game
         switch (_flow.Current)
         {
             case Screen.Setup: file = MenuLayouts.SetupBackground(language); break;
-            case Screen.Options: file = MenuLayouts.TextScreenBackground; break;
+            case Screen.Options:
+            case Screen.Lobby: file = MenuLayouts.TextScreenBackground; break;
             case Screen.HighScores:
                 file = MenuLayouts.HighScoreBackground;
                 extra = MenuLayouts.HighScoreOverlay(language);
