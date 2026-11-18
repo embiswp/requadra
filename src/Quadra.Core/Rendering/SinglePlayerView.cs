@@ -76,6 +76,47 @@ public sealed class SinglePlayerView
         }
     }
 
+    /// <summary>
+    /// Over the board of a network game: before the start the players and what has been said, during it the
+    /// last few chat lines at the top. <paramref name="typing"/> is the line being written, if any.
+    /// </summary>
+    public void PaintRoom(NetworkGame game, string? typing)
+    {
+        const int x = BoardX + 4, width = BoardWidth - 8;
+        int y = BoardY + 4;
+        int step = _text.Height + 2;
+        if (!game.Started)
+        {
+            foreach (var p in game.State.Players.Values)
+            {
+                string line = $"{p.Name} ({p.Team + 1})";
+                _text.Draw(Overlay, Fit(line, width), x, y, p.Slot == game.Slot ? Yellow : White);
+                y += step;
+            }
+            y += step;
+        }
+        foreach (string line in game.Chat.Last(game.Started ? 4 : 8))
+        {
+            _text.Draw(Overlay, Fit(line, width), x, y, new Rgb(200, 200, 200));
+            y += step;
+        }
+        if (typing is not null)
+        {
+            int ty = BoardY + BoardHeight - step - 4;
+            _text.Draw(Overlay, Fit("> " + typing + "_", width, fromEnd: true), x, ty, Yellow);
+        }
+    }
+
+    private static readonly Rgb Yellow = new(255, 255, 0);
+
+    /// <summary>The text cut to fit a width in pixels (its start, or with <paramref name="fromEnd"/> its end).</summary>
+    private string Fit(string text, int width, bool fromEnd = false)
+    {
+        while (text.Length > 1 && _text.Measure(text) > width)
+            text = fromEnd ? text[1..] : text[..^1];
+        return text;
+    }
+
     public const int MaxShownOpponents = 6;
     private const int OpponentX = 440, OpponentY = 40, OpponentColumnStep = 90, OpponentRowStep = 145;
     private const int OpponentCell = BlockPainter.SmallCellSize;
@@ -269,10 +310,10 @@ public sealed class SinglePlayerView
     }
 
     /// <summary>Centres one or two lines of text over the board (pause and game over).</summary>
-    public void PaintMessage(string first, string? second = null)
+    public void PaintMessage(string first, string? second = null, bool low = false)
     {
         int centre = BoardX + BoardWidth / 2;
-        int y = BoardY + BoardHeight / 2 - _text.Height;
+        int y = low ? BoardY + BoardHeight - 3 * _text.Height - 24 : BoardY + BoardHeight / 2 - _text.Height;
         _text.Draw(Overlay, first, centre - _text.Measure(first) / 2, y, White);
         if (second is not null)
             _text.Draw(Overlay, second, centre - _text.Measure(second) / 2, y + _text.Height + 6, new Rgb(200, 200, 200));

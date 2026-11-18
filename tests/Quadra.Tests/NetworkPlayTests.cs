@@ -113,4 +113,27 @@ public class NetworkPlayTests
                     return false;
         return true;
     }
+
+    [Fact]
+    public void Chat_reaches_everyone_including_the_sender_with_the_name_in_front()
+    {
+        var (net, a, b, _, _) = Start();
+
+        a.Say("  hello there ");
+        a.Say("   ");           // nothing to say
+        net.Settle();
+
+        Assert.Equal(["Ann: hello there"], a.Chat.Lines);
+        Assert.Equal(["Ann: hello there"], b.Chat.Lines);
+    }
+
+    [Fact]
+    public void The_chat_log_keeps_only_the_latest_lines()
+    {
+        var log = new ChatLog(3);
+        for (int i = 1; i <= 5; i++)
+            log.Add($"line {i}");
+        Assert.Equal(["line 3", "line 4", "line 5"], log.Lines);
+        Assert.Equal(["line 5"], log.Last(1));
+    }
 }

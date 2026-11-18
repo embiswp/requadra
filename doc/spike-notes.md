@@ -485,10 +485,19 @@ one hosted from the lobby, the other refreshed, clicked the listed game and join
 is empty: the original's address (Ludus Design) is not known to be alive, so one has to be typed in or run
 with `Quadra.Server`. Not done: showing the players of a listed game before joining, ping times, LAN discovery.
 
+### Waiting room and chat (tenth step)
+
+Before the start the network screen lists the players with their teams over the board, and what has been
+said; T opens a chat line (Enter sends, Escape cancels), also during the game, where the last four lines show
+at the top of the board. Chat goes through the host to everyone, the sender included, as `name: text`
+(`NetworkGame.Say`, `ChatLog`). A player who joins later does not see earlier chat, as in the original.
+Checked: tests of the chat path and two windows (the other player's message and the player list on screen).
+The team and handicap are not chosen yet: a joining player takes the first free team and handicap 0.
+
 ## Suggested next steps
 
 1. Play the client and tune the feel: sound balance, speed per level, key timing, menu use.
-2. The rest of the network game on screen: a waiting room (player list, team and handicap choice, chat),
+2. The rest of the network game on screen: team and handicap choice in the waiting room,
    the clear animation (which also fixes the garbage order above), remote falling
    pieces (needs the client to send `Moves`), level-up. Then round management on the host.
 3. Try the host and client against the C++ game to see whether they talk to each other.

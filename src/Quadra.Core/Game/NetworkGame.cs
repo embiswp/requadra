@@ -31,6 +31,26 @@ public sealed class NetworkGame
         Keys = keys;
         Bindings = bindings;
         Player.AttachInput(keys, bindings, horizontalRepeat, continuousDown);
+        client.Received += packet =>
+        {
+            if (packet is ChatPacket chat)
+                Chat.Add(chat.Text);
+        };
+    }
+
+    /// <summary>What was said since this machine joined.</summary>
+    public ChatLog Chat { get; } = new();
+
+    public const int MaxChatLength = 100;
+
+    /// <summary>Says something to everyone, as "name: text"; the host sends it back, so it shows in <see cref="Chat"/> like the rest.</summary>
+    public void Say(string text)
+    {
+        text = text.Trim();
+        if (text.Length > MaxChatLength)
+            text = text[..MaxChatLength];
+        if (text.Length > 0)
+            _client.Chat($"{Local.Name}: {text}");
     }
 
     public byte Slot { get; }

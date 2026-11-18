@@ -322,6 +322,8 @@ public sealed partial class QuadraGame : Game
 
     private void OnTextInput(object? sender, TextInputEventArgs e)
     {
+        if (_networkActive)
+            TypeChat(e.Character);
         if (_flow is { Current: Screen.Lobby })
             _flow.Lobby.TypeCharacter(e.Character);
         if (_flow is { Current: Screen.Setup })

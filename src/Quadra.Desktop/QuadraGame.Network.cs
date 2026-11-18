@@ -27,6 +27,7 @@ public sealed partial class QuadraGame
     private NetworkGame? _netGame;
     private NetworkStage _stage;
     private bool _networkActive;
+    private string? _chatText;       // the line being typed, or null
     private string _networkMessage = "";
     private int _networkLevel;
 
@@ -126,7 +127,11 @@ public sealed partial class QuadraGame
 
     private void UpdateNetwork(KeyboardState keyboard, GameTime gameTime)
     {
-        if (Pressed(keyboard, Keys.Escape))
+        if (Pressed(keyboard, Keys.Escape) && _chatText is not null)
+        {
+            _chatText = null;
+        }
+        else if (Pressed(keyboard, Keys.Escape))
         {
             StopNetwork();
             _networkActive = false;
@@ -221,10 +226,28 @@ public sealed partial class QuadraGame
         }
         var game = _netGame;
 
-        if (!game.Started && game.Countdown == GameHost.WaitingForStart && Pressed(keyboard, Keys.Enter))
+        bool chatting = _chatText is not null;
+        if (chatting)
+        {
+            if (Pressed(keyboard, Keys.Back) && _chatText!.Length > 0)
+                _chatText = _chatText[..^1];
+            if (Pressed(keyboard, Keys.Enter))
+            {
+                game.Say(_chatText!);
+                _chatText = null;
+            }
+            _keys.ClearAll();
+        }
+        else if (Pressed(keyboard, Keys.T))
+        {
+            _chatText = "";
+        }
+        else if (!game.Started && game.Countdown == GameHost.WaitingForStart && Pressed(keyboard, Keys.Enter))
+        {
             client.RequestPause();
+        }
 
-        foreach (var key in _gameKeys)
+        foreach (var key in chatting ? [] : _gameKeys)
         {
             bool down = keyboard.IsKeyDown(key), was = _previousKeys.IsKeyDown(key);
             if (down && !was)
@@ -274,15 +297,16 @@ public sealed partial class QuadraGame
         if (_netGame is { } game)
         {
             _view.Paint(game);
+            _view.PaintRoom(game, _chatText);
             string? first = null, second = null;
             if (!game.Started && game.Countdown == GameHost.WaitingForStart)
-                (first, second) = ($"{game.State.Players.Count} player(s)", "Enter starts the game");
+                (first, second) = ("Enter starts the game", "T to chat");
             else if (!game.Started)
                 first = (game.Countdown / 100 + 1).ToString();
             else if (game.IsDead)
                 (first, second) = ("You are dead", game.DeadFrames > NetworkGame.RespawnLockFrames ? "Press a key to return" : null);
             if (first is not null)
-                _view.PaintMessage(first, second);
+                _view.PaintMessage(first, second, low: !game.Started);
         }
         else
         {
@@ -292,5 +316,14 @@ public sealed partial class QuadraGame
         _overlay.SetData(_view.Overlay.Pixels);
         _batch.Draw(_background.Picture, Vector2.Zero, Color.White);
         _batch.Draw(_overlay, Vector2.Zero, Color.White);
+    }
+}
+
+public sealed partial class QuadraGame
+{
+    private void TypeChat(char c)
+    {
+        if (_chatText is not null && c >= ' ' && c <= '~' && _chatText.Length < NetworkGame.MaxChatLength)
+            _chatText += c;
     }
 }
