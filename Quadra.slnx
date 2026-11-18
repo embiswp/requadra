@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Quadra.Core/Quadra.Core.csproj" />
+    <Project Path="src/Quadra.DemoInfo/Quadra.DemoInfo.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Quadra.Tests/Quadra.Tests.csproj" />
+  </Folder>
+</Solution>
