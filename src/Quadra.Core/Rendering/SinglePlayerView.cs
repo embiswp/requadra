@@ -23,16 +23,24 @@ public sealed class SinglePlayerView
     private readonly PixelBuffer _board = new(BoardWidth, BoardHeight);
     private readonly LegacyFont _text;
     private readonly LegacyFont _numbers;
+    private readonly LegacyText _strings;
     private BlockColors? _colors;
     private Rgb[]? _palette;
 
-    public SinglePlayerView(LegacyFont text, LegacyFont numbers)
+    public SinglePlayerView(LegacyFont text, LegacyFont numbers, LegacyText strings)
     {
         _text = text;
         _numbers = numbers;
+        _strings = strings;
     }
 
     public PixelBuffer Overlay { get; } = new(ScreenWidth, ScreenHeight);
+
+    /// <summary>Show where the piece would land (the player's "shadow" setting).</summary>
+    public bool ShowShadow { get; set; } = true;
+
+    /// <summary>Let the piece glide smoothly (the player's "smooth" setting) instead of jumping from cell to cell.</summary>
+    public bool SmoothMovement { get; set; } = true;
 
     /// <summary>The "level up" banner sprite, if loaded.</summary>
     public PixelBuffer? LevelUpBanner { get; set; }
@@ -61,9 +69,14 @@ public sealed class SinglePlayerView
         {
             var piece = player.Falling;
             // The landing shadow first, then the piece (which slides smoothly in both directions).
-            PaintPiece(piece.Piece, piece.Rotation, (piece.Column - Board.FirstColumn) * BlockPainter.CellSize,
-                (piece.RestingRow() - Board.FirstClearableRow) * BlockPainter.CellSize, BlockColors.ShadowColor);
-            PaintPiece(piece.Piece, piece.Rotation, piece.X >> 4, piece.Y >> 4, piece.Piece);
+            if (ShowShadow)
+                PaintPiece(piece.Piece, piece.Rotation, (piece.Column - Board.FirstColumn) * BlockPainter.CellSize,
+                    (piece.RestingRow() - Board.FirstClearableRow) * BlockPainter.CellSize, BlockColors.ShadowColor);
+            if (SmoothMovement)
+                PaintPiece(piece.Piece, piece.Rotation, piece.X >> 4, piece.Y >> 4, piece.Piece);
+            else
+                PaintPiece(piece.Piece, piece.Rotation, (piece.Column - Board.FirstColumn) * BlockPainter.CellSize,
+                    (piece.Row - Board.FirstClearableRow) * BlockPainter.CellSize, piece.Piece);
         }
 
         if (animation is { FlashColor: not 0 } flash)
@@ -80,6 +93,8 @@ public sealed class SinglePlayerView
         Overlay.Blit(_board, BoardX, BoardY);
         PaintNext(player);
         PaintScores(player);
+        PaintPieceStatistics(player);
+        PaintClearStatistics(player);
     }
 
     private void PaintCells(IBoardView board)
@@ -141,25 +156,72 @@ public sealed class SinglePlayerView
         PaintSmallPiece(Overlay, upcoming[2], BoardX + 5, 2 - BlockPainter.SmallCellSize, _colors!);
     }
 
+    private static readonly Rgb White = new(255, 255, 255);
+
     private void PaintScores(PlayerSim player)
     {
-        var white = new Rgb(255, 255, 255);
         int x = BoardX - 5;
-        _text.Draw(Overlay, "Score", x, 403, white);
-        _numbers.Draw(Overlay, player.Score.ToString(), BoardX + 55, 403, white);
-        _text.Draw(Overlay, "Lines", x, 422, white);
-        _numbers.Draw(Overlay, player.LinesThisRun.ToString(), BoardX + 55, 422, white);
-        _text.Draw(Overlay, "Level", x, 460, white);
-        _numbers.Draw(Overlay, player.Level.ToString(), BoardX + 55, 460, white);
+        _text.Draw(Overlay, _strings.Get(LegacyText.ScoreLabel), x, 403, White);
+        NumberField(BoardX + 55, 403, 120, player.Score);
+        _text.Draw(Overlay, _strings.Get(LegacyText.LinesLabel), x, 422, White);
+        NumberField(BoardX + 55, 422, 65, player.LinesThisRun);
+        _text.Draw(Overlay, _strings.Get(LegacyText.LevelLabel), x, 460, White);
+        NumberField(BoardX + 55, 460, 35, player.Level);
+    }
+
+    /// <summary>The left frame: how many pieces of each kind have been placed (<c>Pane_blockinfo</c>).</summary>
+    private void PaintPieceStatistics(PlayerSim player)
+    {
+        const int x = 24, y = 37, step = 2 * BlockPainter.CellSize + 2;
+        for (int i = 0; i < Pieces.Count; i++)
+        {
+            PaintPiece(Overlay, i, 0, x, y + 2 + step * i, i, _colors!);
+            NumberField(x + 75, y + 30 + step * i, 50, player.PieceCounts[i]);
+        }
+        _text.Draw(Overlay, _strings.Get(LegacyText.Total), x + 19, y + 300, White);
+        NumberField(x + 75, y + 300, 50, player.Stamps);
+    }
+
+    /// <summary>The right frame: how many moves cleared 1, 2, 3 ... lines at once (<c>Pane_comboinfo</c>).</summary>
+    private void PaintClearStatistics(PlayerSim player)
+    {
+        const int x = 428 + 24, y = 37 + 15, step = 20;
+        for (int i = 0; i < 15; i++)
+        {
+            string name = _strings.Get(i < 14 ? LegacyText.FirstClearName + i : LegacyText.MoreClears);
+            _text.Draw(Overlay, name, x, y + step * i, White);
+            NumberField(x + 75, y + step * i, 50, player.ClearCounts[i]);
+        }
+        _text.Draw(Overlay, _strings.Get(LegacyText.Total), x, y + step * 15 + 10, White);
+        NumberField(x + 75, y + step * 15 + 10, 50, player.Lines);
+    }
+
+    /// <summary>
+    /// A framed box with a right-aligned number (<c>Zone_text_field</c>): a one pixel border in palette
+    /// entry 210, a near-black inside (entry 0), the number in the number font.
+    /// </summary>
+    private void NumberField(int x, int y, int width, int value)
+    {
+        int height = _text.Height + 2;
+        uint border = PixelBuffer.Pack(_palette![210]);
+        uint inside = PixelBuffer.Pack(_palette[0]);
+        Overlay.HLine(y, x, width, border);
+        Overlay.HLine(y + height - 1, x, width, border);
+        Overlay.VLine(x, y + 1, height - 2, border);
+        Overlay.VLine(x + width - 1, y + 1, height - 2, border);
+        for (int row = 1; row < height - 1; row++)
+            Overlay.HLine(y + row, x + 1, width - 2, inside);
+
+        string text = value.ToString();
+        _numbers.Draw(Overlay, text, x + 2 + (width - _numbers.Measure(text) - 3), y + 2, White);
     }
 
     /// <summary>Centres one or two lines of text over the board (pause and game over).</summary>
     public void PaintMessage(string first, string? second = null)
     {
-        var white = new Rgb(255, 255, 255);
         int centre = BoardX + BoardWidth / 2;
         int y = BoardY + BoardHeight / 2 - _text.Height;
-        _text.Draw(Overlay, first, centre - _text.Measure(first) / 2, y, white);
+        _text.Draw(Overlay, first, centre - _text.Measure(first) / 2, y, White);
         if (second is not null)
             _text.Draw(Overlay, second, centre - _text.Measure(second) / 2, y + _text.Height + 6, new Rgb(200, 200, 200));
     }

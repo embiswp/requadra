@@ -66,6 +66,15 @@ public sealed class SoundCues
 
     public SoundCue Pause() => Cue(PauseFile, -300, 0, 11025);
 
+    /// <summary>The pointer enters a menu item (<c>Zone_menu::entered</c>).</summary>
+    public SoundCue MenuHover() => Cue("click_1.wav", -2000, 0, 22000 + Rnd(2047));
+
+    /// <summary>A menu item was clicked (<c>Zone_menu::clicked</c>).</summary>
+    public SoundCue MenuClick() => Cue("blip1.wav", -1000, 0, 14000 + Rnd(511));
+
+    /// <summary>A value was changed, such as a Yes/No (<c>Zone_state_text2::clicked</c>).</summary>
+    public SoundCue MenuValue() => Cue("tapdrip.wav", -800, 0, 26000 + Rnd(1023));
+
     /// <summary>Death: the flash sound again, much higher.</summary>
     public SoundCue Death(SoundSet set) => Cue(set.Flash, -600, 0, 22500 + Rnd(1023));
 

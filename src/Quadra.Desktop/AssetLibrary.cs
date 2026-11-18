@@ -17,6 +17,10 @@ internal sealed class AssetLibrary : IDisposable
     private readonly GraphicsDevice _device;
     private readonly string _root;
     private readonly Dictionary<int, Background> _backgrounds = [];
+    private readonly Dictionary<string, Background> _pictures = [];
+    private readonly Dictionary<string, PixelBuffer?> _sprites = [];
+    private readonly Dictionary<string, Texture2D> _spriteTextures = [];
+    private readonly Dictionary<int, LegacyText> _texts = [];
     private readonly Dictionary<string, SoundEffect?> _sounds = [];
     private readonly Dictionary<string, int> _sampleRates = [];
     private bool _audioFailed;
@@ -33,6 +37,58 @@ internal sealed class AssetLibrary : IDisposable
 
     public LegacyFont TextFont { get; }
     public LegacyFont NumberFont { get; }
+
+    /// <summary>The game's strings in a language (0 English, 1 French).</summary>
+    public LegacyText TextFor(int language)
+    {
+        if (!_texts.TryGetValue(language, out var text))
+        {
+            string file = language == 1 ? "francais.txt" : "anglais.txt";
+            text = new LegacyText(File.ReadAllBytes(Path.Combine(_root, "textes", file)));
+            _texts[language] = text;
+        }
+        return text;
+    }
+
+    /// <summary>Size of a picture in the images folder, read from its header.</summary>
+    public (int Width, int Height) ImageSize(string file) => PngInfo.Size(File.ReadAllBytes(Path.Combine(_root, "images", file)));
+
+    /// <summary>A full-screen picture (menu background) with its palette; cached.</summary>
+    public Background Picture(string file)
+    {
+        if (!_pictures.TryGetValue(file, out var picture))
+        {
+            byte[] bytes = File.ReadAllBytes(Path.Combine(_root, "images", file));
+            using var stream = new MemoryStream(bytes);
+            picture = new Background(Texture2D.FromStream(_device, stream), PngPalette.Read(bytes));
+            _pictures[file] = picture;
+        }
+        return picture;
+    }
+
+    /// <summary>A picture whose palette entry 0 is see-through (hover pictures, overlays); cached.</summary>
+    public PixelBuffer? Sprite(string file)
+    {
+        if (!_sprites.TryGetValue(file, out var sprite))
+        {
+            string path = Path.Combine(_root, "images", file);
+            sprite = File.Exists(path) ? LoadSprite(file) : null;
+            _sprites[file] = sprite;
+        }
+        return sprite;
+    }
+
+    /// <summary>The same as <see cref="Sprite"/>, as a texture for drawing with a sprite batch.</summary>
+    public Texture2D? SpriteTexture(string file)
+    {
+        if (_spriteTextures.TryGetValue(file, out var texture))
+            return texture;
+        if (Sprite(file) is not { } sprite)
+            return null;
+        texture = ToTexture(sprite);
+        _spriteTextures[file] = texture;
+        return texture;
+    }
 
     /// <summary>The rising "level up" banner (palette entry 0 is see-through).</summary>
     public PixelBuffer LevelUpBanner { get; }
@@ -110,8 +166,10 @@ internal sealed class AssetLibrary : IDisposable
 
     public void Dispose()
     {
-        foreach (var background in _backgrounds.Values)
+        foreach (var background in _backgrounds.Values.Concat(_pictures.Values))
             background.Picture.Dispose();
+        foreach (var texture in _spriteTextures.Values)
+            texture.Dispose();
         foreach (var effect in _sounds.Values)
             effect?.Dispose();
     }

@@ -206,6 +206,22 @@ public class SoundCueTests
         Assert.Equal(rate, WavInfo.SampleRate(Legacy.Bytes($"sons/{file}")));
 
     [Fact]
+    public void Menu_sounds_use_the_original_samples_quietly_and_sit_in_the_middle()
+    {
+        var cues = Cues();
+        var hover = cues.MenuHover();
+        var click = cues.MenuClick();
+        var value = cues.MenuValue();
+        Assert.Equal(("click_1.wav", "blip1.wav", "tapdrip.wav"), (hover.File, click.File, value.File));
+        Assert.Equal((4096 - 2000) / 4096f, hover.Volume, 4);
+        Assert.Equal((4096 - 1000) / 4096f, click.Volume, 4);
+        Assert.Equal((4096 - 800) / 4096f, value.Volume, 4);
+        Assert.All(new[] { hover, click, value }, c => Assert.Equal(0f, c.Pan));
+        Assert.InRange(hover.Pitch, -0.01f, 0.13f);         // 22000..24047 Hz against a 22050 Hz sample
+        Assert.InRange(click.Pitch, 0.34f, 0.40f);           // 14000..14511 Hz against an 11025 Hz sample
+    }
+
+    [Fact]
     public void Every_sound_the_game_can_play_exists()
     {
         for (int level = 1; level <= 10; level++)
@@ -293,7 +309,8 @@ public class SinglePlayerViewTests
     private const int Drop = 7;
 
     private static SinglePlayerView NewView() =>
-        new(new LegacyFont(Legacy.Bytes("fonts/font.fnt"), 2), new LegacyFont(Legacy.Bytes("fonts/courrier.fnt"), 1));
+        new(new LegacyFont(Legacy.Bytes("fonts/font.fnt"), 2), new LegacyFont(Legacy.Bytes("fonts/courrier.fnt"), 1),
+            new LegacyText(Legacy.Bytes("textes/anglais.txt")));
 
     private static (SinglePlayerGame Game, SinglePlayerView View, BlockColors Colors) NewGame(int seed)
     {
@@ -424,5 +441,247 @@ public class SinglePlayerViewTests
         var view = NewView();
         var game = new SinglePlayerGame(1, new KeyStates(), Bindings);
         Assert.Throws<InvalidOperationException>(() => view.Paint(game));
+    }
+}
+
+public class LegacyTextTests
+{
+    private static LegacyText Text() => new(Legacy.Bytes("textes/anglais.txt"));
+
+    [Fact]
+    public void Strings_are_found_by_the_original_numbers()
+    {
+        var text = Text();
+        Assert.Equal("Score:", text.Get(LegacyText.ScoreLabel));
+        Assert.Equal("Lines:", text.Get(LegacyText.LinesLabel));
+        Assert.Equal("Level:", text.Get(LegacyText.LevelLabel));
+        Assert.Equal("Single", text.Get(LegacyText.FirstClearName));
+        Assert.Equal("Quad", text.Get(LegacyText.FirstClearName + 3));
+        Assert.Equal("14-lines", text.Get(LegacyText.FirstClearName + 13));
+        Assert.Equal("More!", text.Get(LegacyText.MoreClears));
+        Assert.Equal("Total:", text.Get(LegacyText.Total));
+    }
+
+    [Fact]
+    public void The_french_table_has_the_same_strings_in_the_same_places()
+    {
+        var french = new LegacyText(Legacy.Bytes("textes/francais.txt"));
+        Assert.Equal("Simple", french.Get(LegacyText.FirstClearName));
+        Assert.Throws<ArgumentOutOfRangeException>(() => Text().Get(0));
+    }
+}
+
+public class StatisticsTests
+{
+    private static PlayerSim SimStartingWith(int piece)
+    {
+        for (int seed = 0; seed < 500; seed++)
+        {
+            var sim = new PlayerSim(seed, 1);
+            if (sim.CurrentPiece == piece)
+                return sim;
+        }
+        throw new InvalidOperationException();
+    }
+
+    [Fact]
+    public void Placed_pieces_are_counted_by_kind()
+    {
+        var sim = SimStartingWith(3);
+        sim.Stamp(7, 29, 0, 0);
+        int next = sim.CurrentPiece;
+        sim.Stamp(4, 28, 0, 0);
+        Assert.Equal(2, sim.PieceCounts.Sum());
+        Assert.Equal(next == 3 ? 2 : 1, sim.PieceCounts[3]);
+        Assert.Equal(1, sim.PieceCounts[next] - (next == 3 ? 1 : 0));
+    }
+
+    [Fact]
+    public void A_four_line_clear_is_counted_as_a_quad()
+    {
+        var sim = SimStartingWith(5);              // the straight piece
+        for (int row = 28; row <= 31; row++)
+            for (int x = 4; x < 14; x++)
+                if (x != 5)
+                    sim.Board.Fill(row, x);
+        var result = sim.Stamp(4, 28, 1, 0);       // upright, in column 5
+
+        Assert.Equal(4, result.Lines);
+        Assert.Equal(1, sim.ClearCounts[3]);
+        Assert.Equal(1, sim.ClearCounts.Sum());
+        Assert.Equal(4, sim.Lines);
+    }
+}
+
+public class SidePanelTests
+{
+    private static readonly KeyBindings Bindings = new(1, 2, 3, 4, 5, 6, 7);
+
+    private static (SinglePlayerGame Game, SinglePlayerView View, Rgb[] Palette, BlockColors Colors) Setup()
+    {
+        var palette = Legacy.Palette(1);
+        var view = new SinglePlayerView(new LegacyFont(Legacy.Bytes("fonts/font.fnt"), 2),
+            new LegacyFont(Legacy.Bytes("fonts/courrier.fnt"), 1), new LegacyText(Legacy.Bytes("textes/anglais.txt")));
+        view.SetPalette(palette);
+        return (new SinglePlayerGame(3, new KeyStates(), Bindings), view, palette, new BlockColors(palette));
+    }
+
+    private static bool AnyPixel(PixelBuffer b, int x0, int y0, int w, int h) =>
+        Enumerable.Range(y0, h).Any(y => Enumerable.Range(x0, w).Any(x => b.Get(x, y) != PixelBuffer.Transparent));
+
+    [Fact]
+    public void Number_fields_have_a_palette_frame_a_dark_inside_and_right_aligned_digits()
+    {
+        var (game, view, palette, _) = Setup();
+        view.Paint(game);
+        var o = view.Overlay;
+
+        // The score field: x 278, y 403, 120 wide, 20 high.
+        Assert.Equal(PixelBuffer.Pack(palette[210]), o.Get(278, 403));
+        Assert.Equal(PixelBuffer.Pack(palette[210]), o.Get(278 + 119, 403 + 10));
+        Assert.Equal(PixelBuffer.Pack(palette[0]), o.Get(280, 405));
+        Assert.False(AnyPixel(o, 280, 405, 90, 14) && !AnyPixel(o, 280 + 90, 405, 28, 14));   // digits sit at the right end
+        Assert.True(AnyPixel(o, 278 + 120 - 20, 405, 18, 14));                                 // the single "0"
+    }
+
+    [Fact]
+    public void The_labels_use_the_original_text_with_colons()
+    {
+        var (game, view, _, _) = Setup();
+        view.Paint(game);
+        Assert.True(AnyPixel(view.Overlay, 218, 403, 55, 18));
+        Assert.True(AnyPixel(view.Overlay, 218, 460, 55, 18));
+    }
+
+    [Fact]
+    public void The_left_frame_lists_the_seven_pieces_with_counts_and_a_total()
+    {
+        var (game, view, _, colors) = Setup();
+        view.Paint(game);
+        var o = view.Overlay;
+
+        // Piece 0 (the square) at (24, 39): the middle of its top-left cell is the main colour.
+        Assert.Equal(colors.Shade(0, 4), o.Get(24 + 18 + 9, 39 + 18 + 9));
+        // Piece 6 is drawn 6 rows of 38 pixels lower.
+        Assert.True(AnyPixel(o, 24, 39 + 38 * 6, 72, 54));
+        // Count boxes at x 99 for every piece, and the total at y 337.
+        for (int i = 0; i < 7; i++)
+            Assert.True(AnyPixel(o, 99, 67 + 38 * i, 50, 20), $"count box {i}");
+        Assert.True(AnyPixel(o, 43, 337, 50, 18));     // "Total:"
+        Assert.True(AnyPixel(o, 99, 337, 50, 20));
+    }
+
+    [Fact]
+    public void The_right_frame_lists_the_clear_sizes_from_single_to_more()
+    {
+        var (game, view, palette, _) = Setup();
+        view.Paint(game);
+        var o = view.Overlay;
+        for (int k = 0; k < 15; k++)
+        {
+            Assert.True(AnyPixel(o, 452, 52 + 20 * k, 60, 18), $"label {k}");
+            Assert.Equal(PixelBuffer.Pack(palette[210]), o.Get(527, 52 + 20 * k));
+        }
+        Assert.True(AnyPixel(o, 452, 362, 60, 18));    // "Total:"
+        Assert.Equal(PixelBuffer.Pack(palette[210]), o.Get(527, 362));
+    }
+
+    [Fact]
+    public void The_counts_follow_the_game()
+    {
+        var (game, view, _, _) = Setup();
+
+        uint[][] Boxes() => Enumerable.Range(0, 8).Select(i =>
+        {
+            int y = i < 7 ? 67 + 38 * i : 337;
+            return Enumerable.Range(0, 20 * 50).Select(n => view.Overlay.Get(99 + n % 50, y + n / 50)).ToArray();
+        }).ToArray();
+
+        view.Paint(game);
+        var before = Boxes();
+
+        game.Keys.Down(7);                              // drop the first piece
+        while (game.Phase == GamePhase.Falling)
+            game.Update();
+        view.Paint(game);
+        var after = Boxes();
+
+        int kind = Enumerable.Range(0, 7).First(i => game.Player.PieceCounts[i] == 1);
+        for (int box = 0; box < 8; box++)
+        {
+            bool changed = !before[box].SequenceEqual(after[box]);
+            Assert.Equal(box == kind || box == 7, changed);   // its own kind, and the total
+        }
+    }
+}
+
+public class LevelFadeTests
+{
+    private static readonly KeyBindings Bindings = new(1, 2, 3, 4, 5, 6, 7);
+
+    [Fact]
+    public void The_screen_fades_out_while_play_goes_on_then_the_level_changes_and_the_game_freezes()
+    {
+        var game = new SinglePlayerGame(5, new KeyStates(), Bindings);
+        game.StartLevelChange(2);
+        Assert.Equal(SinglePlayerGame.LevelUpBannerFrames, game.LevelUpFrames);
+        Assert.Equal(1, game.DisplayedLevel);
+
+        int framesBefore = game.Player.Falling.Frames;
+        for (int n = 1; n <= SinglePlayerGame.FadeFrames; n++)
+        {
+            game.Update();
+            Assert.Equal(1f - n / 16f, game.Brightness, 4);
+            Assert.False(game.IsFrozen);
+            Assert.Equal(1, game.DisplayedLevel);
+        }
+        Assert.Equal(0f, game.Brightness);
+        Assert.Equal(framesBefore + 16, game.Player.Falling.Frames);     // the piece kept falling
+
+        game.Update();                                                    // the screen is black: swap
+        Assert.Equal(2, game.DisplayedLevel);
+        Assert.True(game.IsFrozen);
+        int frozenAt = game.Player.Falling.Frames;
+        for (int n = 2; n <= SinglePlayerGame.FadeFrames; n++)
+        {
+            game.Update();
+            Assert.True(game.IsFrozen);
+            Assert.Equal(n / 16f, game.Brightness, 4);
+        }
+        for (int n = 0; n < SinglePlayerGame.FadeWaitFrames; n++)
+        {
+            game.Update();
+            Assert.Equal(1f, game.Brightness);
+        }
+        Assert.Equal(frozenAt, game.Player.Falling.Frames);               // nothing moved while frozen
+        Assert.True(game.IsFrozen);                                       // 30 frozen frames in total
+
+        game.Update();                                                    // play resumes
+        Assert.False(game.IsFrozen);
+        Assert.Equal(frozenAt + 1, game.Player.Falling.Frames);
+        Assert.Equal(1f, game.Brightness);
+    }
+
+    [Fact]
+    public void The_banner_keeps_rising_even_while_the_game_is_frozen()
+    {
+        var game = new SinglePlayerGame(5, new KeyStates(), Bindings);
+        game.StartLevelChange(2);
+        for (int n = 0; n < 25; n++)
+            game.Update();
+        Assert.True(game.IsFrozen);
+        Assert.Equal(SinglePlayerGame.LevelUpBannerFrames - 25, game.LevelUpFrames);
+    }
+
+    [Fact]
+    public void A_second_level_up_during_a_change_shows_the_newest_level()
+    {
+        var game = new SinglePlayerGame(5, new KeyStates(), Bindings);
+        game.StartLevelChange(2);
+        game.Update();
+        game.StartLevelChange(3);
+        for (int n = 0; n < 17; n++)
+            game.Update();
+        Assert.Equal(3, game.DisplayedLevel);
     }
 }

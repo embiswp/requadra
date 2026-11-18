@@ -37,6 +37,8 @@ public sealed class PlayerSim
     private readonly int[] _attacks = new int[MaxPlayers];
     private readonly List<int> _pendingGarbage = [];
     private readonly List<ClearPass> _lastClear = [];
+    private readonly int[] _pieceCounts = new int[Pieces.Count];
+    private readonly int[] _clearCounts = new int[15];
     private int _falls, _bestCombo;
 
     private readonly FallingPiece _falling;
@@ -74,6 +76,15 @@ public sealed class PlayerSim
     public int Stamps { get; private set; }
     public int InvalidStamps { get; private set; }
     public int Deaths { get; private set; }
+
+    /// <summary>How many pieces of each of the seven kinds have been placed (<c>CS::COMPTE0</c> and up).</summary>
+    public IReadOnlyList<int> PieceCounts => _pieceCounts;
+
+    /// <summary>
+    /// How many moves cleared 1, 2, ... 14 lines at once; the last entry counts 15 or more
+    /// (<c>CS::CLEAR00</c> and up). The original also counts a 15-line move twice; that is not copied.
+    /// </summary>
+    public IReadOnlyList<int> ClearCounts => _clearCounts;
 
     /// <summary>When true, <see cref="Stamp"/> keeps what the clear looked like in <see cref="LastClear"/>.</summary>
     public bool RecordClearAnimation { get; set; }
@@ -245,6 +256,7 @@ public sealed class PlayerSim
         if (!valid)
             InvalidStamps++;
         Stamps++;
+        _pieceCounts[piece]++;
         Score += dropScore;
         Board.Stamp(piece, rotation, x, y);
         Shift();
@@ -298,6 +310,7 @@ public sealed class PlayerSim
         if (lines > 0)
         {
             Score += LegacyScoring.Clear(lines, combo, _level);
+            _clearCounts[Math.Min(lines, _clearCounts.Length) - 1]++;
             Lines += lines;
             LinesThisRun += lines;
             if (_levelUp && LinesThisRun >= _level * 15)

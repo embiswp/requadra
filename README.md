@@ -22,11 +22,17 @@ dotnet test                                    # run the tests
 dotnet run --project src/Quadra.DemoInfo -- legacy/demos/demo00.rec
 ```
 
+The program starts on the original menu: Single-player game, Highscores, Player setup (name, keys, speeds,
+shadow, smooth, continuous down, three profiles) and Options (English or French). Settings and high scores are
+saved in your application data folder (on macOS `~/Library/Application Support/Quadra`); `--data-dir` uses
+another folder. F11 toggles full screen.
+
 Try other levels with `dotnet run --project src/Quadra.Desktop -- --level 7`: each of the ten levels has its
 own background, block colours and sound set.
 
-Controls: arrows move and soft-drop, Up rotates right, Z rotates left, X rotates twice, Space drops,
-P pauses, Esc quits.
+Default controls (change them in Player setup): arrows move and soft-drop, Up rotates, Right Shift rotates
+twice, Space drops. In the game P pauses and Esc returns to the menu; in the menus use the mouse, or the
+arrow keys with Enter and Esc.
 
 Needs the .NET SDK (the libraries target net8.0; the tests target net11.0).
 

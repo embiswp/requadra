@@ -62,6 +62,12 @@ public sealed class SinglePlayerGame
     /// <summary>Frames the level-up banner rises (it is drawn 1 pixel higher each frame).</summary>
     public const int LevelUpBannerFrames = 220;
 
+    /// <summary>Frames the screen takes to fade out, and to fade back in, when the level changes.</summary>
+    public const int FadeFrames = 16;
+
+    /// <summary>Frames the game waits after the fade-in before play resumes ("so the level up does not jerk").</summary>
+    public const int FadeWaitFrames = 14;
+
     /// <summary>Palette index a flashing row alternates between with <see cref="FlashWhite"/>.</summary>
     public const int FlashRed = 200;
     public const int FlashWhite = 255;
@@ -69,12 +75,14 @@ public sealed class SinglePlayerGame
     private readonly List<AnimationFrame> _timeline = [];
     private int _timelineIndex;
     private int _pauseFramesLeft;
+    private int _fadeFrame = -1;     // -1: no level change in progress
+    private int _pendingLevel;
 
-    public SinglePlayerGame(int seed, KeyStates keys, KeyBindings bindings, int horizontalRepeat = 2, int verticalRepeat = 2, int startLevel = 1)
+    public SinglePlayerGame(int seed, KeyStates keys, KeyBindings bindings, int horizontalRepeat = 2, int verticalRepeat = 2, int startLevel = 1, bool continuousDown = true)
     {
         Keys = keys;
         Player = new PlayerSim(seed, startLevel, verticalRepeat, levelUp: true) { RecordClearAnimation = true };
-        Player.AttachInput(keys, bindings, horizontalRepeat);
+        Player.AttachInput(keys, bindings, horizontalRepeat, continuousDown);
         DisplayedLevel = Player.Level;
     }
 
@@ -88,10 +96,19 @@ public sealed class SinglePlayerGame
     public bool IsOver => Phase == GamePhase.GameOver;
 
     /// <summary>
-    /// The level that background, colours and sounds follow. It changes when the clear that earned
-    /// the level has finished playing, not at the instant of the landing.
+    /// The level that background, colours and sounds follow. It changes once the screen has faded to black
+    /// after the clear that earned the level, not at the instant of the landing.
     /// </summary>
     public int DisplayedLevel { get; private set; }
+
+    /// <summary>
+    /// How bright the whole screen is, from 0 (black) to 1. A level change fades out for
+    /// <see cref="FadeFrames"/> frames while play goes on, then the new level fades in while the game is frozen.
+    /// </summary>
+    public float Brightness { get; private set; } = 1f;
+
+    /// <summary>True while the game is frozen for a level change.</summary>
+    public bool IsFrozen => _fadeFrame > FadeFrames && _fadeFrame <= 2 * FadeFrames + FadeWaitFrames;
 
     /// <summary>Frames left of the rising "level up" banner (0 when it is not shown).</summary>
     public int LevelUpFrames { get; private set; }
@@ -111,6 +128,12 @@ public sealed class SinglePlayerGame
         Frame++;
         if (LevelUpFrames > 0)
             LevelUpFrames--;
+        if (_fadeFrame >= 0)
+        {
+            AdvanceFade();
+            if (IsFrozen)
+                return;
+        }
 
         if (Phase == GamePhase.Settling)
         {
@@ -168,10 +191,47 @@ public sealed class SinglePlayerGame
         {
             Events.Add(e);
             if (e.Kind == GameEventKind.LevelUp)
-            {
-                DisplayedLevel = e.Value;
-                LevelUpFrames = LevelUpBannerFrames;
-            }
+                StartLevelChange(e.Value);
+        }
+    }
+
+    /// <summary>
+    /// The banner starts rising and the screen starts to fade out; the display switches to
+    /// <paramref name="level"/> when the screen is black. Called when the level rises (and handy for testing).
+    /// </summary>
+    public void StartLevelChange(int level)
+    {
+        LevelUpFrames = LevelUpBannerFrames;
+        if (_fadeFrame >= 0)
+        {
+            _pendingLevel = level;      // a change is already running; it will show the newest level
+            return;
+        }
+        _pendingLevel = level;
+        _fadeFrame = 0;
+    }
+
+    private void AdvanceFade()
+    {
+        _fadeFrame++;
+        if (_fadeFrame <= FadeFrames)
+        {
+            Brightness = 1f - _fadeFrame / (float)FadeFrames;
+        }
+        else if (_fadeFrame <= 2 * FadeFrames)
+        {
+            if (_fadeFrame == FadeFrames + 1)
+                DisplayedLevel = _pendingLevel;     // the screen is black: swap background and colours
+            Brightness = (_fadeFrame - FadeFrames) / (float)FadeFrames;
+        }
+        else if (_fadeFrame <= 2 * FadeFrames + FadeWaitFrames)
+        {
+            Brightness = 1f;
+        }
+        else
+        {
+            _fadeFrame = -1;
+            Brightness = 1f;
         }
     }
 

@@ -318,10 +318,68 @@ Differences from the original, on purpose or for now:
 - Panning follows the piece's side (right piece, right speaker). In the original code the sign looks
   inverted; this is a guess about what was intended.
 - Master volume is 0.6; the original mixes quietly (samples are scaled to a quarter of full scale).
-- The background changes at once on a level-up; the original fades between pictures.
-- The left and right frames (block statistics and combo help) are empty.
 - Death uses the flash sound once instead of the original's animated board colouring.
 - No music; the original has none either, only effects.
+
+Side frames and level fade (seventh step):
+
+- **Number fields.** The score, lines and level (and all counts) are drawn as the original's framed fields
+  (`Zone_text_field`): a one pixel border in palette entry 210, a near-black inside (entry 0), the number
+  right-aligned in the number font. The labels now come from the original text table ("Score:", "Lines:",
+  "Level:") through `LegacyText`, which finds strings by the original numbers (`ST_BASE`); French is linked
+  too and ready for a language setting.
+- **Left frame** (`Pane_blockinfo`): the seven pieces with how many of each have been placed, and a total.
+  **Right frame** (`Pane_comboinfo`): Single, Double, Triple, Quad, 5-lines ... 14-lines and More!, with how
+  many moves cleared that many lines at once, and the total lines. `PlayerSim` now keeps `PieceCounts` and
+  `ClearCounts` for this. Deliberately not copied: the original counts a 15-line move twice.
+- **Level fade** (`Player_level_up`, `Player_change_level`): when the level rises, the whole screen fades to
+  black over 16 frames while play goes on; at black the background, block colours and sounds switch; then the
+  game freezes for 30 frames (16 of fade-in and a 14 frame wait) while the new level fades in. The banner
+  keeps rising throughout. The original fades the palette; here the finished picture is darkened, which
+  looks the same. `SinglePlayerGame.Brightness` and `IsFrozen` expose it; the client draws a black layer.
+- Checked: tests (text numbers in both languages, the counts, a four-line clear counted as a Quad, the
+  painted frames and boxes, the exact fade and freeze timeline) and screenshots of a normal frame and of a
+  frame in the middle of a fade (`--fade` runs one in a smoke test).
+
+Menus and settings (eighth step):
+
+- **Screens.** The program now starts on the original main menu (`debuto.png`) and leads to Single-player
+  game, Highscores, Player setup, Options and Quit. Multi-player, Demo central and the old "Register" item
+  show a short "not available yet" notice. Every screen uses the original pictures at the original
+  coordinates; hover pictures are drawn over the baked-in text. English and French both work (their own
+  pictures, positions and strings; accented letters and the arrow symbol in "Back" use the font's own glyphs).
+- **Structure.** `Quadra.Core/Menus` holds all of the logic and none of the drawing: `MenuScreen` (items with
+  hit areas, pointer and keyboard focus), `MenuLayouts` (the original coordinates, from `menu.cc`),
+  `SetupModel` (cycling values, typing, key capture), and `AppFlow` (which screen is shown and what each
+  choice does, including the game-over to high-scores step). `MenuPainter` paints the text and panels
+  (framed value boxes in the picture's own palette colours, as `Zone_state_text` does). The window only
+  forwards mouse, keyboard and text input and draws the result.
+- **Player setup.** Three profiles, each with name, password (kept for the later Internet game), shadow,
+  smooth movement, horizontal and vertical speed, continuous down and the seven keys. Clicking a key waits
+  for a key press (Escape cancels, Enter is refused as in the original); "Set all keys" asks for them in
+  the original order with the original prompts. The settings really take effect in the game: bindings,
+  repeat speeds, the landing shadow, smooth movement and continuous down.
+- **High scores.** The best five single-player games (the original's `MAX_SCORE`). A death goes on to the
+  table after a moment (Enter skips it), as in the original; the new entry is highlighted and the level-up
+  sound plays. The original keeps each score as a recording that can be played back; this keeps the figures.
+- **Storage.** `settings.json` and `highscores.json` in the user's application data folder (on macOS
+  `~/Library/Application Support/Quadra`); a missing or damaged file gives the defaults, values are
+  repaired when read, and files are written through a temporary file. `--data-dir` uses another folder.
+- **Menu sounds.** Hover, click and value-change use the original samples and parameters.
+- Checked: tests for the screen model, the layouts (hit areas from the real picture sizes, no value panel
+  covering another label), setup typing and key capture, the whole flow, settings and high score files,
+  French fonts and strings, and the painter's pixels; screenshots of every screen in both languages; and
+  **scripted runs of the real window** (`--script`): clicking through to Player setup, toggling Shadow,
+  typing a name, rebinding Drop and leaving gave exactly the saved settings; starting a game from the menu
+  used the rebound key and a finished game appeared in the saved high score table.
+- Found while testing: the French pictures must be copied opaquely over the background (treating them as
+  see-through left ghosts of the English text), and the left key panels were wide enough to cover the
+  start of the "Rotate counterclockwise" label.
+
+Not done from the original's menus: the intro, the "Single-player game type" choice (normal or 5-minute
+sprint), the options for sound mode, mouse speed, Internet port, game server and proxy (they belong to the
+network game), the demo and help screens, and playing back a high score. Nobody has used the menus by hand
+yet: hover feel, sounds and the key capture are checked only through the scripted runs.
 
 Open question: the repository's licence (LGPL) covers the whole source release including these files, but
 there is no separate statement for the art and sound samples, and the game's copyright notice names Ludus
@@ -329,10 +387,10 @@ Design. Worth confirming with the upstream project before distributing builds th
 
 ## Suggested next steps
 
-1. Play the client and tune the feel: sound balance, speed per level, key timing.
-2. Fill the two side frames (block statistics and combo help) and add the fade between levels.
-3. Menus and settings (key bindings, repeat speed), high scores, then the network game: the packet
-   decoder, the rules and the key layer are already in `Quadra.Core`; the server (Qserv) would be rebuilt
-   in ASP.NET Core.
-4. Android and iOS planning remains a separate task. Touch controls map naturally onto the key-state
-   layer (a button is a key id).
+1. Play the client and tune the feel: sound balance, speed per level, key timing, menu use.
+2. The network game: the packet decoder, the rules and the key layer are already in `Quadra.Core`; the
+   menus have the profiles (name, password) and a place for the options (port, server). The Perl game
+   list server (Qserv) would be rebuilt in ASP.NET Core.
+3. Smaller gaps: the 5-minute sprint game, high score playback, the demo screen.
+4. Android and iOS planning remains a separate task. Touch controls map naturally onto the key-state layer
+   (a button is a key id) and the menu model (items with hit areas).

@@ -13,10 +13,11 @@
 
   <!-- The original art, sounds and fonts are used straight from legacy/ and copied next to the program. -->
   <ItemGroup>
-    <Content Include="..\..\legacy\images\fond?.png;..\..\legacy\images\gamelvup.png;..\..\legacy\images\gamepaus.png"
+    <Content Include="..\..\legacy\images\fond?.png;..\..\legacy\images\gamelvup.png;..\..\legacy\images\gamepaus.png;..\..\legacy\images\debut*.png;..\..\legacy\images\setup*.png;..\..\legacy\images\hscor*.png;..\..\legacy\images\multi.png"
              Link="Assets\images\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\legacy\sons\*.wav" Link="Assets\sons\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\legacy\fonts\*.fnt" Link="Assets\fonts\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\legacy\textes\anglais.txt;..\..\legacy\textes\francais.txt" Link="Assets\textes\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
