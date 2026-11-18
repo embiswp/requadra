@@ -81,14 +81,79 @@ Example output (`demo00.rec`): 1637 packets, 4 players, deaths 1/3/2/1 and
 - Only .NET 11 is installed on this machine. `Quadra.Core` targets net8.0 and compiles
   against it, but it has only been run through the net11.0 test project.
 
+## Feasibility of a full replay (read of `legacy/source` plus a throwaway Python prototype)
+
+Question: can the demos verify the game rules (score, lines, frags) and not only the packets?
+Answer: **yes, feasible**. A throwaway Python replay (not in the repository) was checked against the
+stored summaries of the four demos.
+
+How the C++ code produces the numbers (all net version 20 rules):
+
+- **Piece sequence.** Each player has its own generator seeded with the game seed from the game
+  packet (`Random::crap_rnd` in `random.cc`: `tmp = seed*0x41c64e6d + 0x3039` in 32-bit
+  arithmetic, `seed = tmp >> 10`, result `tmp & 0xFFFF`, piece `% 7`). Four pieces are drawn when
+  a player starts or respawns, then one per stamp. No re-seed packets occur in the demos.
+- **Stamp packets** give the final position and rotation, and the per-drop score. The piece
+  type comes from the sequence above.
+- **Line clears** are not a simple row removal. `Player_check_line` clears full rows, then
+  `Player_check_link` drops every cell group that is no longer supported (connectivity comes from
+  the side bits of each cell). Repeating this is what the `complexity` (combo) counter measures.
+- **Scoring** is in `Canvas::give_line` (base points per line count, plus
+  `1000 * (combo - 1)`, plus 10 % per level) and `check_clean` (5000 for an empty board).
+- **Garbage lines** come from `Lines` packets (`Canvas::add_packet`) and are applied at the next
+  stamp by `Player_add_bonus`. The executor is a stack, so garbage is added *before* the line check.
+- **Frags** come from the `attacks`/`last_attacker` bookkeeping on `Lines` packets and are counted
+  on `Dead` packets.
+
+Prototype results (summary score and lines vs. replay):
+
+| Demo | Result |
+|---|---|
+| `demo02` (single player, no garbage) | **Exact**: score 54826 and 18 lines, all 49 stamps valid |
+| all four demos, frags | **Exact for all 13 players** |
+| `demo00` Jeps, `demo01` Dada | Exact or valid stamps with garbage-first ordering |
+| other multiplayer players | Diverge at some point (about 2 of 13 players match fully) |
+
+The single-player match shows the piece generator, piece table, gravity and scoring are correct.
+All 49 stamps being physically valid is only possible if the sequence is reproduced exactly.
+Multiplayer divergence is limited to garbage handling. Pending garbage on death was tried both
+ways and was not the cause. Remaining suspects: timing of when a `Lines` packet takes effect
+relative to the recorded frame, the exact bookkeeping in `Player_add_bonus` (side-bit edits near
+the hole), and respawn handling. This is not yet resolved, so exact multiplayer replay is
+unproven.
+
+Cost estimate: the rules are about 400 lines of pure logic once separated from the UI, so the
+port itself is moderate. The open risk is the multiplayer garbage details above.
+
+## Ported rules (second step)
+
+`src/Quadra.Core/Rules` now holds the parts of the prototype that matched:
+
+| File | Ports | C++ source |
+|---|---|---|
+| `LegacyRandom.cs` | piece generator (net versions below 23) | `random.cc` |
+| `Pieces.cs` | the 7 pieces in 4 rotations (generated from the C++ table) | `bloc.cc` |
+| `Board.cs` | playfield, placement checks, row clearing, support/gravity pass | `canvas.cc`, `player.cc` (`check_nb_line`, `Player_check_link`) |
+| `LegacyScoring.cs` | line-clear points, clean-board bonus | `canvas.cc` (`give_line`), `player.cc` (`check_clean`) |
+| `PlayerSim.cs` | one player: piece queue, stamping, score, lines | `player.cc` |
+| `Demos/DemoReplay.cs` | replays a demo through the above | `recording.cc` |
+
+Test result: **`demo02` (single player) reproduces the recorded score (54826) and lines (18) exactly**,
+with all 49 stamps valid. The replay marks each player as `ExpectedExact` only if no garbage
+rows were sent to them. Multiplayer players who were hit by garbage are not expected to match yet.
+It throws `NotSupportedException` for net versions from 23 and for games with level-up, because
+those rules are not ported.
+
+Not ported: garbage rows (`Lines` packets), the frag bookkeeping, level-up, net version 23+ rules.
+
 ## Suggested next steps
 
-1. Port `Random` and the block shape table (`Bloc::bloc` in `legacy/source/bloc.cc`) to
-   `Quadra.Core` and add a board model (occupied cells, collision, line detection).
-2. Extract the scoring rules from `Canvas::give_line` into a pure class and add the
-   garbage-line handling (`Canvas::add_packet`).
-3. Replay `Moves` and `StampBlock` packets through that model and compare `score`, `lines`
-   and `frags` with each demo's summary. If they match for all four demos, the rules port is
-   verified.
+1. Resolve the multiplayer garbage divergence (see the feasibility section), then port garbage
+   handling (`Canvas::add_packet`, `Player_add_bonus`) so the three multiplayer demos can be
+   verified too.
+2. Port the frag bookkeeping (`attacks`, `last_attacker`); the prototype already matched all
+   frag counts.
+3. Compare `score`, `lines` and `frags` with each demo's summary. If all four demos match, the
+   rules port is verified.
 4. Only then start the MonoGame client on top of `Quadra.Core`.
 5. Android/iOS planning remains a separate task.

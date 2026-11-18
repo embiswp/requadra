@@ -30,6 +30,12 @@ foreach (var path in args)
         Console.WriteLine($"  slot {p.Slot} {p.Name,-8} team {p.Team}  deaths {p.Deaths,2}  stamps {p.Stamps,4}   (summary: score {score}, lines {lines})");
     }
 
+    foreach (var r in DemoReplay.Run(demo))
+    {
+        string expected = r.ExpectedExact ? "expected exact" : $"{r.GarbagePacketsIgnored} garbage packets not applied";
+        Console.WriteLine($"  replay {r.Name,-8} score {r.Score,7}  lines {r.Lines,3}  invalid stamps {r.InvalidStamps,3}  ({expected})");
+    }
+
     foreach (var g in demo.Packets.GroupBy(d => d.Packet.Type).OrderBy(g => (int)g.Key))
         Console.WriteLine($"    {g.Key,-14} {g.Count()}");
 }
