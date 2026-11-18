@@ -37,6 +37,14 @@ public sealed class NetReader
 
     public int ReadInt() => unchecked((int)ReadDword());
 
+    public byte[] ReadBytes(int count)
+    {
+        var bytes = new byte[count];
+        for (int i = 0; i < count; i++)
+            bytes[i] = ReadByte();
+        return bytes;
+    }
+
     /// <summary>
     /// Reads a NUL-terminated string of at most <paramref name="maxSize"/> bytes
     /// (including the terminator). Control characters become spaces, as in the C++ code.

@@ -3,6 +3,8 @@
     <Project Path="src/Quadra.Core/Quadra.Core.csproj" />
     <Project Path="src/Quadra.DemoInfo/Quadra.DemoInfo.csproj" />
     <Project Path="src/Quadra.Desktop/Quadra.Desktop.csproj" />
+    <Project Path="src/Quadra.Host/Quadra.Host.csproj" />
+    <Project Path="src/Quadra.Server/Quadra.Server.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Quadra.Tests/Quadra.Tests.csproj" />

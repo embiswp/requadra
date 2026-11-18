@@ -14,7 +14,20 @@ public sealed record ClearPass(IReadOnlyList<int> Rows, int Combo, BoardSnapshot
 /// <summary>Outcome of placing one piece, including everything it triggered.</summary>
 /// <param name="Combo">Most successive clears caused by this piece (1 for a plain clear, 0 for none).</param>
 /// <param name="Falls">Number of steps in which loose cells fell.</param>
-public readonly record struct StampResult(bool Valid, int Piece, int Lines, int Points, int Combo = 0, int Falls = 0);
+/// <param name="Clears">
+/// The moves that scored, in order. A piece makes one; garbage that then completes rows makes a second,
+/// and each of them sends its own attack.
+/// </param>
+/// <param name="LastColumn">Board column of the last block of the piece, the anchor of garbage holes it sends.</param>
+public readonly record struct StampResult(bool Valid, int Piece, int Lines, int Points, int Combo = 0, int Falls = 0)
+{
+    public IReadOnlyList<ClearEvent> Clears { get; init; } = [];
+    public int LastColumn { get; init; }
+}
+
+/// <summary>One scoring move: <paramref name="Lines"/> rows over <paramref name="Combo"/> successive passes.</summary>
+/// <param name="Clean">The board was left empty, which sends extra lines.</param>
+public readonly record struct ClearEvent(int Lines, int Combo, bool Clean);
 
 /// <summary>
 /// The rules-only part of one player: board, piece queue, pending garbage, score, lines and the
@@ -259,6 +272,7 @@ public sealed class PlayerSim
         _pieceCounts[piece]++;
         Score += dropScore;
         Board.Stamp(piece, rotation, x, y);
+        int lastColumn = x + LastCellColumn(piece, rotation);
         Shift();
 
         for (int i = 0; i < MaxPlayers; i++)
@@ -269,26 +283,32 @@ public sealed class PlayerSim
         int before = Score;
         _lastClear.Clear();
         _falls = _bestCombo = 0;
-        int lines = ClearLines();
+        var clears = new List<ClearEvent>();
+        int lines = ClearLines(clears);
         if (_pendingGarbage.Count > 0)
         {
             Board.AddGarbage(_pendingGarbage);
             _pendingGarbage.Clear();
-            lines += ClearLines();
+            lines += ClearLines(clears);
         }
         _falling.Spawn(_queue[0]);
         Landed = null;
         _input?.BeginPiece();
-        return new StampResult(valid, piece, lines, Score - before, _bestCombo, _falls);
+        return new StampResult(valid, piece, lines, Score - before, _bestCombo, _falls)
+        {
+            Clears = clears,
+            LastColumn = lastColumn,
+        };
     }
 
     /// <summary>
     /// Clears complete rows until none is left (each pass is one step of the combo), then scores
     /// the move (<c>Player_check_line</c> followed by <c>Canvas::give_line</c>).
     /// </summary>
-    private int ClearLines()
+    private int ClearLines(List<ClearEvent> clears)
     {
         int lines = 0, combo = 0;
+        bool clean = false;
         while (true)
         {
             var rows = RecordClearAnimation ? new List<int>() : null;
@@ -298,7 +318,10 @@ public sealed class PlayerSim
             lines += cleared;
             combo++;
             if (Board.IsEmpty())
+            {
                 Score += LegacyScoring.CleanBoardBonus;
+                clean = true;
+            }
             var afterRemoval = RecordClearAnimation ? Board.Snapshot() : null;
             var steps = RecordClearAnimation ? new List<BoardSnapshot>() : null;
             _falls += Board.DropUnsupported(steps);
@@ -311,6 +334,7 @@ public sealed class PlayerSim
         {
             Score += LegacyScoring.Clear(lines, combo, _level);
             _clearCounts[Math.Min(lines, _clearCounts.Length) - 1]++;
+            clears.Add(new ClearEvent(lines, combo, clean));
             Lines += lines;
             LinesThisRun += lines;
             if (_levelUp && LinesThisRun >= _level * 15)
@@ -320,6 +344,18 @@ public sealed class PlayerSim
             }
         }
         return lines;
+    }
+
+    // The column (within the piece's 4x4 box) of the last block in reading order, which is how the original
+    // picks the anchor of the holes in the garbage a clear sends.
+    private static int LastCellColumn(int piece, int rotation)
+    {
+        int column = 0;
+        for (int j = 0; j < 4; j++)
+            for (int i = 0; i < 4; i++)
+                if (Pieces.Shapes[piece, rotation, j, i] != 0)
+                    column = i;
+        return column;
     }
 
     private void Shift()

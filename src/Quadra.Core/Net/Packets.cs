@@ -129,3 +129,56 @@ public sealed record StatePacket(byte State) : PlayerPacketBase;
 public sealed record EndGamePacket(bool AutoEnd) : Packet;
 
 public sealed record ServerRandomPacket(uint Seed) : Packet;
+
+/// <summary>A connection asks to take part. A first byte of zero marks a 1.1.0 client, which is ignored.</summary>
+public sealed record WantJoinPacket : Packet
+{
+    public uint Uid { get; init; }
+    public bool Current { get; init; } = true;
+    public byte NetVersion { get; init; }
+    public byte Language { get; init; }
+    public byte Os { get; init; }
+}
+
+/// <summary>A connection asks to add one of its players to the game.</summary>
+public sealed record PlayerWantJoinPacket : Packet
+{
+    public uint Uid { get; init; }
+    public byte Team { get; init; }
+    public string Name { get; init; } = "";
+    public byte Player { get; init; }
+    public int Smooth { get; init; }
+    public int Shadow { get; init; }
+    public int Handicap { get; init; }
+    public byte[] PlayerHash { get; init; } = new byte[16];
+    public string TeamName { get; init; } = "";
+    public byte[] TeamHash { get; init; } = new byte[16];
+    public int HRepeat { get; init; }
+    public int VRepeat { get; init; }
+}
+
+/// <summary>Why a player could not join (or how they did); <see cref="PlayerAcceptedPacket.Accepted"/>.</summary>
+public enum JoinAnswer : byte
+{
+    Accepted = 0,
+    Refused = 1,
+    NameTaken = 2,
+    GameFinished = 3,
+    Replacing = 4,
+    Full = 5,
+}
+
+public sealed record PlayerAcceptedPacket : Packet
+{
+    public uint Uid { get; init; }
+    public byte Pos { get; init; }
+    public JoinAnswer Accepted { get; init; }
+}
+
+public enum DropReason : byte { Auto, Manual, InvalidBlock }
+
+/// <summary>Sent in the same layout as <see cref="PacketType.DropPlayer"/>, <see cref="PacketType.ClientDropPlayer"/> and <see cref="PacketType.ServerDropPlayer"/>.</summary>
+public sealed record DropPlayerPacket(DropReason Reason) : PlayerPacketBase;
+
+/// <summary>Round-trip measurement: the client sends one, the host sends it back (<see cref="PacketType.ClientTestPing"/>, <see cref="PacketType.TestPing"/>, <see cref="PacketType.ServerTestPing"/>).</summary>
+public sealed record TestPingPacket(uint Frame) : Packet;

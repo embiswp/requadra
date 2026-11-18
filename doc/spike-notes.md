@@ -385,12 +385,87 @@ Open question: the repository's licence (LGPL) covers the whole source release i
 there is no separate statement for the art and sound samples, and the game's copyright notice names Ludus
 Design. Worth confirming with the upstream project before distributing builds that include them.
 
+## Network game and game list server (seventh step)
+
+Built without any screen yet: the game list server, the wire format, a game host and a client library. The
+desktop client does not use them yet.
+
+**Game list server** (`src/Quadra.Server`, logic in `Quadra.Core/Qserv`): a port of `legacy/server/qserv.pl`
+as an ASP.NET Core app. Same protocol: a form POST whose `data` field holds a command line (`postgame`,
+`deletegame`, `postdemo`, `gethighscores`, `getgames`) and `key value` lines (`/` nests), answered in plain
+text; it answers on `/cgi-bin/qserv.pl` (as before), `/qserv` and `/`. It keeps the old behaviour: the caller's
+address (not the one in the request) names the game, the port falls back to 3456, a game expires 180 s
+after its last post, old clients (no `quadra_version`) see one game per host, 1.1.2 clients get no player
+list, scores are kept by score value (best 100). Checked with a raw HTTP/1.0 request in the old client's form.
+
+Differences from the Perl: games live in memory (a restart empties the list, which refills within a minute as
+hosts post again) and scores are kept in a JSON file (`Qserv:ScoresFile`); bad data gets an HTTP 400 instead of
+a script crash; a posted recording is limited to 1 MB and `num` to the kept scores; the `HTML.pm` and
+`Message.pm` plug-ins were not ported (the script does not use them). No TLS: put it behind a reverse proxy and
+set `ASPNETCORE_FORWARDEDHEADERS_ENABLED=true` so callers' addresses are right. IPv6 callers get an IPv6 key,
+which the old client cannot parse (it cuts at the first `:`).
+
+**Client side** (`QservClient`, `GameAnnouncement`, `HostAnnouncer`): talks to such a server over HTTP, lists
+games, posts and withdraws a hosted game every 60 s, posts and fetches high scores with recordings.
+
+**Wire format**: `PacketEncoder` writes what `PacketDecoder` reads (and the join packets were added to
+both): every complete packet in the four recorded demos re-encodes to the same bytes, and the ones 1.1 stored
+short are written in full and read back the same. Framing (`PacketFraming`) is the original's: little-endian
+16-bit size, then the packet; zero or 4096+ is garbage and ends the connection. `TcpGameServer`, `TcpGameLink`
+and `PacketStream` run it over sockets, with the original's 256 KiB limit on unsent output.
+
+**Host** (`GameHost`; `src/Quadra.Host` runs one without a player of its own): the join handshake, slots,
+checks that a connection only acts for its own players, relaying `Client*` packets as the plain packets to
+everyone else, chat, test ping, pause and the start countdown (499 frames after a start request), dropping a
+connection's players when it goes. It keeps its own copy of every board (`MultiplayerState`, the logic that
+`DemoReplay` was split out of; the replay results did not change).
+
+**Client** (`GameClient`): joins, keeps the same copy of the game, applies what the host sends on the caller's
+thread (`Pump`) and what its own players do at once. Like the original it works out the garbage for *its own*
+players when a stamp arrives and sends it (the host does not).
+
+What is verified:
+
+- The attack rules (`AttackRules`, from `Canvas::give_line` and `Net_list::send`, net versions below 23) give
+  all 416 attacks recorded in the four demos, per attacker and victim, with the same line counts, combos and
+  hole columns. This needed `StampResult` to report each clear separately and the column of the piece's last
+  block.
+- A recorded game played through a host and one client per player (the recorded `Lines` packets are not sent;
+  the clients work them out) leaves the host and every client with the same boards, scores, lines, frags and
+  deaths, in all four demos. In two of them (demo00, demo02) the result is also the recorded one exactly.
+- Everything also runs over real sockets in the tests (join, relay, chat, ping, dropped connection, garbage
+  input, packets split and glued), and a live host shows up in a live list server and leaves it on SIGTERM.
+
+What is not the recorded result, and why: in demo01 (and probably demo03, which I did not trace) the totals differ
+from the recording. The clients agree with each other; the difference is the order in which garbage from
+*different attackers* reaches one victim, which the recording shows differently from the arrival order the
+clients use. In the original a clear sends its garbage when its clear animation ends on the victim's
+machine, so the order depends on animation timing; headless clients do not model it, a client with a screen will.
+
+What is not done:
+
+- A player can only join before the game starts. The original sends a late joiner every board as it stands
+  (`Download`); that needs a way to restore a `PlayerSim` and is not built. Such a connection is closed.
+- Round management: survivor rounds (first frag, waiting for winner, restart, `ServerState`), the game end
+  conditions (frags, time, points, lines), `EndGame`, game and player statistics packets, rejoining after
+  being dropped, the lag and idle limits, the admin commands, spectators (`Moves` relaying).
+- Hot potato and blind attacks (net version 22 and up), by decision: 1.1 rules only.
+- LAN discovery over UDP (`FindGame`/`GameInfo`) and the network options in the menus.
+- Nobody has tested it against the original C++ client. The packets match the decoder's reading of the
+  recordings and the C++ source, but a real 1.1 or 1.3 peer may expect something this read of the source
+  missed (for example, what it does with the longer 1.3-style packets the host sends). The legacy game can be
+  built to try this.
+
 ## Suggested next steps
 
 1. Play the client and tune the feel: sound balance, speed per level, key timing, menu use.
-2. The network game: the packet decoder, the rules and the key layer are already in `Quadra.Core`; the
-   menus have the profiles (name, password) and a place for the options (port, server). The Perl game
-   list server (Qserv) would be rebuilt in ASP.NET Core.
-3. Smaller gaps: the 5-minute sprint game, high score playback, the demo screen.
-4. Android and iOS planning remains a separate task. Touch controls map naturally onto the key-state layer
+2. The network game on screen: a lobby (host or join, player list, start), the play screen with several
+   boards (the single-player view already draws a board; the others are the same view smaller), the local
+   player loop sending its stamps through `GameClient`, and the frame-accurate clear animation that fixes the
+   garbage order above. Then round management on the host.
+3. Try the host and client against the C++ game to see whether they talk to each other.
+4. Late join (`Download`) and the rest of the list under "not done".
+5. Smaller gaps: the 5-minute sprint game, high score playback and posting to the shared table, the demo
+   screen.
+6. Android and iOS planning remains a separate task. Touch controls map naturally onto the key-state layer
    (a button is a key id) and the menu model (items with hit areas).

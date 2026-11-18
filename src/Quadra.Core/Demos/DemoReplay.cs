@@ -1,3 +1,4 @@
+using Quadra.Core.Game;
 using Quadra.Core.Net;
 using Quadra.Core.Rules;
 
@@ -36,59 +37,42 @@ public static class DemoReplay
         if (!gs.Survivor)
             throw new NotSupportedException("Games without survivor rules are not ported yet.");
 
-        var names = new Dictionary<byte, string>();
-        var sims = new SortedDictionary<byte, PlayerSim>();
-        var frags = new Dictionary<byte, int>();
+        var state = new MultiplayerState(gs) { PlayMoves = input == ReplayInput.Moves };
         var mismatches = new Dictionary<byte, int>();
         var deathMismatches = new Dictionary<byte, int>();
         var awaitingDeath = new HashSet<byte>();   // the sim says this player's new piece is blocked
 
         foreach (var (_, packet) in demo.Packets)
         {
+            // What the recording says is checked against what the rules predict around each packet.
             switch (packet)
             {
                 case PlayerPacket p:
-                    names[p.Pos] = p.Name;
-                    sims[p.Pos] = new PlayerSim(gs.GameSeed, gs.LevelStart, p.VRepeat);
-                    frags[p.Pos] = 0;
                     mismatches[p.Pos] = 0;
                     deathMismatches[p.Pos] = 0;
                     break;
-                case MovesPacket m when input == ReplayInput.Moves && sims.TryGetValue(m.Slot, out var sim):
-                    foreach (byte frame in m.Moves)
-                        sim.Move((MoveFlags)frame);
-                    break;
-                case StampBlockPacket s when sims.TryGetValue(s.Slot, out var sim):
-                    if (input == ReplayInput.Moves && sim.Landed != new Placement(s.X, s.Y, s.Rotate))
+                case StampBlockPacket s when state.Players.TryGetValue(s.Slot, out var player):
+                    if (input == ReplayInput.Moves && player.Sim.Landed != new Placement(s.X, s.Y, s.Rotate))
                         mismatches[s.Slot]++;
-                    sim.Stamp(s.X, s.Y, s.Rotate, s.Score);
-                    if (sim.SpawnBlocked)
-                        awaitingDeath.Add(s.Slot);
                     break;
-                case RespawnPacket r when sims.TryGetValue(r.Slot, out var sim):
-                    sim.Restart();
-                    if (awaitingDeath.Remove(r.Slot))
-                        deathMismatches[r.Slot]++;   // predicted a death that was never recorded
+                case RespawnPacket r when awaitingDeath.Remove(r.Slot):
+                    deathMismatches[r.Slot]++;   // predicted a death that was never recorded
                     break;
-                case LinesPacket l when l.Sender != PlayerSim.NoAttacker && sims.ContainsKey(l.Sender)
-                                        && sims.TryGetValue(l.Slot, out var sim):
-                    if (l.Attack.Type != AttackType.None)
-                        sim.ReceiveLines(l.Sender, l.Nb, l.Nc, l.Lx);
-                    break;
-                case DeadPacket d when sims.TryGetValue(d.Slot, out var sim):
-                    if (!awaitingDeath.Remove(d.Slot))
-                        deathMismatches[d.Slot]++;   // a recorded death the sim did not predict
-                    int fragger = sim.Die();
-                    if (fragger != PlayerSim.NoAttacker && frags.ContainsKey((byte)fragger))
-                        frags[(byte)fragger]++;
+                case DeadPacket d when state.Players.ContainsKey(d.Slot) && !awaitingDeath.Remove(d.Slot):
+                    deathMismatches[d.Slot]++;   // a recorded death the sim did not predict
                     break;
             }
+
+            state.Apply(packet);
+
+            if (packet is StampBlockPacket stamped && state.Players.TryGetValue(stamped.Slot, out var after) && after.Sim.SpawnBlocked)
+                awaitingDeath.Add(stamped.Slot);
         }
 
-        return sims
-            .Select(kv => new PlayerReplay(kv.Key, names[kv.Key], kv.Value.Score, kv.Value.Lines, frags[kv.Key],
-                kv.Value.Deaths, kv.Value.Stamps, kv.Value.InvalidStamps, mismatches[kv.Key], kv.Value.MovesAfterLanding,
-                deathMismatches[kv.Key] + (awaitingDeath.Contains(kv.Key) ? 1 : 0)))
+        return state.Players.Values
+            .Select(p => new PlayerReplay(p.Slot, p.Name, p.Sim.Score, p.Sim.Lines, p.Frags, p.Sim.Deaths, p.Sim.Stamps,
+                p.Sim.InvalidStamps, mismatches[p.Slot], p.Sim.MovesAfterLanding,
+                deathMismatches[p.Slot] + (awaitingDeath.Contains(p.Slot) ? 1 : 0)))
             .ToList();
     }
 }

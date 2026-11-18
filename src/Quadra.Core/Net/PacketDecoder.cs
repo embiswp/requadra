@@ -31,6 +31,12 @@ public static class PacketDecoder
             PacketType.Lines or PacketType.ClientLines => ReadLines(r),
             PacketType.Moves or PacketType.ClientMoves => ReadPlayerBase(r, s => ReadMoves(r, s)),
             PacketType.State or PacketType.ClientState or PacketType.ServerState => ReadPlayerBase(r, s => new StatePacket(r.ReadByte()) { Slot = s }),
+            PacketType.WantJoin => ReadWantJoin(r),
+            PacketType.PlayerWantJoin => ReadPlayerWantJoin(r),
+            PacketType.PlayerAccepted => new PlayerAcceptedPacket { Uid = r.ReadDword(), Pos = r.ReadByte(), Accepted = (JoinAnswer)r.ReadByte() },
+            PacketType.DropPlayer or PacketType.ClientDropPlayer or PacketType.ServerDropPlayer =>
+                ReadPlayerBase(r, s => new DropPlayerPacket((DropReason)r.ReadByte()) { Slot = s }),
+            PacketType.ClientTestPing or PacketType.TestPing or PacketType.ServerTestPing => new TestPingPacket(r.ReadDword()),
             PacketType.EndGame => new EndGamePacket(r.ReadBool()),
             PacketType.ServerRandom => new ServerRandomPacket(r.ReadDword()),
             _ => new RawPacket(payload[1..]),
@@ -125,6 +131,44 @@ public static class PacketDecoder
             NormalAttack = normal, CleanAttack = clean,
             PotatoNormalAttack = potatoNormal, PotatoCleanAttack = potatoClean,
             Single = single, Terminated = terminated, BoringRules = boring,
+        };
+    }
+
+    private static WantJoinPacket ReadWantJoin(NetReader r)
+    {
+        uint uid = r.ReadDword();
+        bool current = r.ReadByte() != 0;
+        byte version = r.ReadByte();
+        byte language = r.ReadByte();
+        byte os = r.ReadByte();
+        r.ReadBool();
+        return new WantJoinPacket { Uid = uid, Current = current, NetVersion = version, Language = language, Os = os };
+    }
+
+    private static PlayerWantJoinPacket ReadPlayerWantJoin(NetReader r)
+    {
+        uint uid = r.ReadDword();
+        byte team = r.ReadByte();
+        string name = r.ReadString(40, out _);
+        byte player = r.ReadByte();
+        int repeat = r.ReadInt();
+        int smooth = r.ReadInt();
+        int shadow = r.ReadInt();
+        int handicap = r.ReadInt();
+        var playerHash = r.ReadBytes(16);
+        string teamName = r.ReadString(40, out _);
+        var teamHash = r.ReadBytes(16);
+        int h = r.ReadInt();
+        int v = r.ReadInt();
+        // Older peers send one shared repeat speed and no separate ones.
+        if (repeat != -1 && h == 0)
+            h = repeat;
+        if (repeat != -1 && v == 0)
+            v = repeat;
+        return new PlayerWantJoinPacket
+        {
+            Uid = uid, Team = team, Name = name, Player = player, Smooth = smooth, Shadow = shadow, Handicap = handicap,
+            PlayerHash = playerHash, TeamName = teamName, TeamHash = teamHash, HRepeat = h, VRepeat = v,
         };
     }
 

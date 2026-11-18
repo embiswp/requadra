@@ -5,7 +5,11 @@ using Quadra.Core.Net;
 namespace Quadra.Core.Demos;
 
 /// <summary>A packet recorded at a given overmind frame.</summary>
-public readonly record struct DemoPacket(uint Frame, Packet Packet);
+/// <summary>A recorded packet at its frame, with the bytes it was decoded from when they are known.</summary>
+public readonly record struct DemoPacket(uint Frame, Packet Packet, byte[]? Raw = null)
+{
+    public void Deconstruct(out uint frame, out Packet packet) => (frame, packet) = (Frame, Packet);
+}
 
 /// <summary>
 /// A Quadra demo (.rec) file. Format (see source/recording.cc):
@@ -72,12 +76,13 @@ public sealed class DemoFile
                     uint frame = BitConverter.ToUInt32(data, i);
                     ushort size = BitConverter.ToUInt16(data, i + 4);
                     i += 6;
-                    var packet = PacketDecoder.Decode(data[i..(i + size)]);
+                    var raw = data[i..(i + size)];
+                    var packet = PacketDecoder.Decode(raw);
                     i += size;
                     demo.GameServer ??= packet as GameServerPacket;
                     // Like Playback::read_packet: ignore packets that precede the game packet.
                     if (packet is not GameServerPacket && demo.GameServer is not null)
-                        packets.Add(new DemoPacket(frame, packet));
+                        packets.Add(new DemoPacket(frame, packet, raw));
                     break;
                 }
                 case HunkSummary:
