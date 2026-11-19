@@ -16,7 +16,8 @@ game is kept untouched in [`legacy/`](legacy/).
 | `src/Quadra.DemoInfo` | Command-line tool that replays the recorded demos and prints the results. |
 | `tests/Quadra.Tests` | xUnit tests, including replays of the four demos in `legacy/demos`. |
 | `legacy/` | The original C++ game, its art, sounds and the old Perl server. |
-| `doc/` | Notes: the old tech stack, modernisation options and the spike findings. |
+| `doc/` | Notes: the old tech stack, modernisation options, the spike findings, [how releases are made](doc/releasing.md) and a plan for Android. |
+| `deploy/` | A docker-compose file for self-hosting the game list server and a game host. |
 | `.devcontainer/` | VS Code dev container: .NET SDKs, a virtual desktop for the game window, GitHub CLI and the Claude CLI. See its [README](.devcontainer/README.md). |
 
 ## Run

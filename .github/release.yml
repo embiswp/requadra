@@ -1,0 +1,20 @@
+# How the notes of a release are sorted: by the label of each merged pull request.
+changelog:
+  exclude:
+    labels:
+      - skip-changelog
+  categories:
+    - title: Game rules and play
+      labels: [gameplay]
+    - title: Network and multiplayer
+      labels: [network]
+    - title: Desktop app
+      labels: [desktop]
+    - title: Servers and Docker
+      labels: [server, docker]
+    - title: Fixes
+      labels: [bug]
+    - title: Project, build and docs
+      labels: [ci, documentation, refactoring]
+    - title: Other changes
+      labels: ["*"]

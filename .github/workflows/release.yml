@@ -1,0 +1,251 @@
+name: Release
+
+# A release is made for every commit on master whose CI run passed: the merge of a finished feature.
+# It is a draft until the repository variable PUBLISH_RELEASES is "true" (see doc/releasing.md).
+#
+# A change to the release files on spike or in a pull request runs everything as a dry run: all programs
+# and images are built, but nothing is pushed and no release is made.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [master]
+  workflow_dispatch:
+  push:
+    branches: [spike]
+    paths:
+      - .github/workflows/release.yml
+      - .github/release.yml
+      - .github/release-header.md
+      - src/*/Dockerfile
+      - deploy/**
+  pull_request:
+    branches: [master]
+    paths:
+      - .github/workflows/release.yml
+      - .github/release.yml
+      - .github/release-header.md
+      - src/*/Dockerfile
+      - deploy/**
+
+# One release at a time, so that version numbers are handed out in order.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: "1"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+  DRY_RUN: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
+
+jobs:
+  version:
+    name: Next version
+    if: >-
+      github.event_name == 'push' || github.event_name == 'pull_request'
+      || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master')
+      || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      version: ${{ steps.next.outputs.version }}
+      tag: ${{ steps.next.outputs.tag }}
+      skip: ${{ steps.next.outputs.skip }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.SHA }}
+          fetch-depth: 0
+
+      - name: Work out the version
+        id: next
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          semver='^v[0-9]+\.[0-9]+\.[0-9]+$'
+
+          # This commit already has a release (a re-run): do nothing.
+          existing=$(gh api "repos/$GITHUB_REPOSITORY/releases" --paginate \
+            -q ".[] | select(.target_commitish == \"$SHA\") | .tag_name" | head -n 1 || true)
+          if [ -n "$existing" ]; then
+            echo "Release $existing already exists for $SHA."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # The newest version of all tags and releases (a draft has no tag until it is published).
+          latest=$( { git tag -l 'v*'; gh release list --limit 200 --json tagName -q '.[].tagName'; } \
+            | grep -E "$semver" | sort -V | tail -n 1 || true)
+          latest=${latest:-v0.0.0}
+          IFS=. read -r major minor patch <<< "${latest#v}"
+
+          # A label on the merged pull request chooses the size of the step; the default is a new minor version.
+          labels=$(gh api "repos/$GITHUB_REPOSITORY/commits/$SHA/pulls" -q '.[].labels[].name' || true)
+          if grep -qx 'release:major' <<< "$labels"; then
+            major=$((major + 1)); minor=0; patch=0
+          elif grep -qx 'release:patch' <<< "$labels"; then
+            patch=$((patch + 1))
+          else
+            minor=$((minor + 1)); patch=0
+          fi
+
+          version="$major.$minor.$patch"
+          echo "Previous $latest, next v$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+  # Every program, as a ready-to-send archive. The desktop app carries the .NET runtime with it;
+  # the server and the host need the .NET 8 runtime (or newer).
+  package:
+    name: ${{ matrix.name }}
+    needs: version
+    if: needs.version.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { name: Desktop Windows x64, project: Quadra.Desktop, rid: win-x64, package: Quadra-win-x64, format: zip }
+          - { name: Desktop Windows arm64, project: Quadra.Desktop, rid: win-arm64, package: Quadra-win-arm64, format: zip }
+          - { name: Desktop Linux x64, project: Quadra.Desktop, rid: linux-x64, package: Quadra-linux-x64, format: tar.gz }
+          - { name: Desktop Linux arm64, project: Quadra.Desktop, rid: linux-arm64, package: Quadra-linux-arm64, format: tar.gz }
+          - { name: Desktop macOS Intel, project: Quadra.Desktop, rid: osx-x64, package: Quadra-macos-x64, format: tar.gz }
+          - { name: Desktop macOS Apple silicon, project: Quadra.Desktop, rid: osx-arm64, package: Quadra-macos-arm64, format: tar.gz }
+          - { name: Server, project: Quadra.Server, rid: "", package: QuadraServer, format: zip }
+          - { name: Host, project: Quadra.Host, rid: "", package: QuadraHost, format: zip }
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.SHA }}
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: |
+            8.0.x
+            11.0.x
+
+      - uses: actions/cache@v6
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Publish and pack
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          PROJECT: ${{ matrix.project }}
+          RID: ${{ matrix.rid }}
+          PACKAGE: ${{ matrix.package }}
+          FORMAT: ${{ matrix.format }}
+        run: |
+          set -euo pipefail
+          folder="$PACKAGE-$VERSION"
+          args=()
+          if [ -n "$RID" ]; then args+=(-r "$RID" --self-contained); fi
+          dotnet publish "src/$PROJECT" -c Release "${args[@]}" \
+            -p:Version="$VERSION" -p:InformationalVersion="$VERSION+${SHA::7}" -o "dist/$folder"
+          cp LICENSE "dist/$folder/"
+
+          # Pack with tar or zip here, because the artifact upload would drop the executable bit.
+          mkdir -p out
+          (cd dist && if [ "$FORMAT" = zip ]; then zip -qr "../out/$folder.zip" "$folder"; else tar -czf "../out/$folder.tar.gz" "$folder"; fi)
+          ls -lh out
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-${{ matrix.package }}
+          path: out/*
+          retention-days: 7
+
+  # The self-hosting images for the game list server and for the game host.
+  docker:
+    name: Docker image (${{ matrix.image }})
+    needs: version
+    if: needs.version.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { image: requadra-server, project: Quadra.Server }
+          - { image: requadra-host, project: Quadra.Host }
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.SHA }}
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        if: env.DRY_RUN != 'true'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+          tags: |
+            type=raw,value=${{ needs.version.outputs.version }}
+            type=raw,value=latest
+
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: src/${{ matrix.project }}/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          build-args: VERSION=${{ needs.version.outputs.version }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          push: ${{ env.DRY_RUN != 'true' }}
+
+  release:
+    name: GitHub release
+    needs: [version, package, docker]
+    if: github.event_name == 'workflow_run' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.SHA }}
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: release-*
+          path: files
+          merge-multiple: true
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+          TAG: ${{ needs.version.outputs.tag }}
+          OWNER: ${{ github.repository_owner }}
+          PUBLISH: ${{ vars.PUBLISH_RELEASES }}
+        run: |
+          set -euo pipefail
+          (cd files && sha256sum * > SHA256SUMS.txt)
+
+          # The text above the generated notes (.github/release.yml sorts those by label).
+          sed -e "s|\${VERSION}|$VERSION|g" -e "s|\${OWNER}|${OWNER,,}|g" .github/release-header.md > header.md
+
+          draft=--draft
+          if [ "$PUBLISH" = true ]; then draft=; fi
+          gh release create "$TAG" files/* $draft \
+            --target "$SHA" --title "Quadra $VERSION" \
+            --notes-file header.md --generate-notes

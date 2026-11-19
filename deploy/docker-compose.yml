@@ -1,0 +1,29 @@
+# Self-hosting: a game list server, and optionally a game host.
+#   docker compose up -d                       the game list on port 8080
+#   docker compose --profile host up -d        also a game on port 3456
+# Replace "latest" with a version (for example 0.3.0) to stay on it.
+services:
+  list-server:
+    image: ghcr.io/embiswp/requadra-server:latest
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - scores:/data
+    # Behind a reverse proxy, let the server see the player's own address:
+    # environment:
+    #   ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
+
+  game-host:
+    image: ghcr.io/embiswp/requadra-host:latest
+    profiles: ["host"]
+    restart: unless-stopped
+    ports:
+      - "3456:3456/tcp"
+      - "3457:3457/udp"
+    command: ["--name", "My Quadra game", "--list", "http://list-server:8080/cgi-bin/qserv.pl"]
+    depends_on:
+      - list-server
+
+volumes:
+  scores:
