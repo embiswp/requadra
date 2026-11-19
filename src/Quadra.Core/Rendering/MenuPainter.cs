@@ -144,6 +144,15 @@ public sealed class MenuPainter
         Panel(MenuLayouts.LobbyFieldX, MenuLayouts.LobbyServerY, MenuLayouts.LobbyServerWidth,
             Caret(lobby.FieldText("server"), caretOn), centered: false, highlighted: focused == "server");
 
+        _text.Draw(Overlay, "Rules", MenuLayouts.LobbyHostX - 0, MenuLayouts.LobbyRulesY - 14, Grey);
+        _text.Draw(Overlay, "Survivor", MenuLayouts.LobbyHostX, MenuLayouts.LobbyRulesY + 2, Grey);
+        Panel(105, MenuLayouts.LobbyRulesY, 50, lobby.ValueText("survivor"), centered: true, highlighted: focused == "survivor");
+        _text.Draw(Overlay, "End", 170, MenuLayouts.LobbyRulesY + 2, Grey);
+        Panel(205, MenuLayouts.LobbyRulesY, 90, lobby.ValueText("end"), centered: true, highlighted: focused == "end");
+        Panel(300, MenuLayouts.LobbyRulesY, 50, lobby.ValueText("endvalue"), centered: true, highlighted: focused == "endvalue");
+        _text.Draw(Overlay, "Combo", 365, MenuLayouts.LobbyRulesY + 2, Grey);
+        Panel(420, MenuLayouts.LobbyRulesY, 40, lobby.ValueText("combo"), centered: true, highlighted: focused == "combo");
+
         _text.Draw(Overlay, lobby.Status, MenuLayouts.LobbyHostX, MenuLayouts.LobbyStatusY, Grey);
         BackButton(flow, focused == "back");
     }

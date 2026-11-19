@@ -126,7 +126,7 @@ public sealed class AppFlow
             Setup.Cycle(id, direction);
         else if (Current == Screen.Options && id == "language")
             ActivateOptions(id);
-        else if (Current == Screen.Lobby && id is "team" or "handicap")
+        else if (Current == Screen.Lobby && id is "team" or "handicap" or "survivor" or "end" or "endvalue" or "combo")
             Lobby.Cycle(id, direction);
     }
 
@@ -266,7 +266,7 @@ public sealed class AppFlow
                 Lobby.Status = Lobby.ServerUrl.Length > 0 ? "Fetching the game list..." : "No game list server is set";
                 break;
             case "address" or "server": Lobby.BeginEdit(id); break;
-            case "team" or "handicap":
+            case "team" or "handicap" or "survivor" or "end" or "endvalue" or "combo":
                 Lobby.Cycle(id, 1);
                 _saveSettings();
                 break;

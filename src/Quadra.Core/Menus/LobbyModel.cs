@@ -37,6 +37,9 @@ public sealed class LobbyModel(GameSettings settings)
 
     public LobbyEdit Edit { get; private set; }
 
+    /// <summary>The rules "Host a game" starts with.</summary>
+    public HostSettings Rules => settings.Rules;
+
     public string Address => settings.LastAddress;
     public string ServerUrl => settings.ListServer;
 
@@ -60,6 +63,17 @@ public sealed class LobbyModel(GameSettings settings)
     {
         "team" => settings.CurrentPlayer.Team < 0 ? "auto" : (settings.CurrentPlayer.Team + 1).ToString(CultureInfo.InvariantCulture),
         "handicap" => settings.CurrentPlayer.Handicap.ToString(CultureInfo.InvariantCulture),
+        "survivor" => settings.Rules.Survivor ? "on" : "off",
+        "end" => settings.Rules.End switch
+        {
+            Net.GameEnd.Frag => "frags",
+            Net.GameEnd.Time => "minutes",
+            Net.GameEnd.Points => "k points",
+            Net.GameEnd.Lines => "lines",
+            _ => "never",
+        },
+        "endvalue" => settings.Rules.End == Net.GameEnd.Never ? "-" : settings.Rules.EndValue.ToString(CultureInfo.InvariantCulture),
+        "combo" => settings.Rules.ComboMin.ToString(CultureInfo.InvariantCulture),
         _ => FieldText(id),
     };
 
@@ -71,6 +85,17 @@ public sealed class LobbyModel(GameSettings settings)
             player.Team = Wrap(player.Team + 1 + direction, PacketLimits.Teams + 1) - 1;
         else if (id == "handicap")
             player.Handicap = Wrap(player.Handicap + direction, PlayerSettings.MaxHandicap + 1);
+        else if (id == "survivor")
+            settings.Rules.Survivor = !settings.Rules.Survivor;
+        else if (id == "end")
+            settings.Rules.End = (Net.GameEnd)Wrap((int)settings.Rules.End + direction, Enum.GetValues<Net.GameEnd>().Length);
+        else if (id == "endvalue" && settings.Rules.End != Net.GameEnd.Never)
+        {
+            int step = settings.Rules.End is Net.GameEnd.Frag or Net.GameEnd.Time ? 1 : 10;
+            settings.Rules.EndValue = Math.Clamp(settings.Rules.EndValue + direction * step, 0, HostSettings.MaxEndValue);
+        }
+        else if (id == "combo")
+            settings.Rules.ComboMin = Wrap(settings.Rules.ComboMin + direction, HostSettings.MaxComboMin + 1);
     }
 
     private static int Wrap(int value, int count) => (value % count + count) % count;

@@ -153,4 +153,34 @@ public class LobbyTests
         flow.Activate("handicap");
         Assert.Equal("0", flow.Lobby.ValueText("handicap"));
     }
+
+    [Fact]
+    public void The_rules_of_a_hosted_game_are_set_on_the_lobby_screen()
+    {
+        var flow = MenuFixtures.NewFlow();
+        flow.Show(Screen.Lobby);
+        Assert.Equal("off", flow.Lobby.ValueText("survivor"));
+        Assert.Equal("never", flow.Lobby.ValueText("end"));
+        Assert.Equal("-", flow.Lobby.ValueText("endvalue"));
+
+        flow.Activate("survivor");
+        flow.Activate("end");                          // frags
+        flow.Activate("endvalue");
+        flow.Cycle("endvalue", 1);
+        flow.Activate("combo");
+
+        var rules = flow.Settings.Rules;
+        Assert.True(rules.Survivor);
+        Assert.Equal(Quadra.Core.Net.GameEnd.Frag, rules.End);
+        Assert.Equal(2, rules.EndValue);
+        Assert.Equal(1, rules.ComboMin);
+
+        flow.Activate("end"); flow.Activate("end");    // time, then points: the value now moves by 10
+        flow.Activate("endvalue");
+        Assert.Equal(12, rules.EndValue);
+        flow.Cycle("end", -1);
+        flow.Cycle("end", -1);
+        flow.Cycle("end", -1);
+        Assert.Equal("never", flow.Lobby.ValueText("end"));
+    }
 }

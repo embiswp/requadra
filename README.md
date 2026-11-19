@@ -47,7 +47,8 @@ line count, frag and death in the four demos is reproduced, and so is every garb
 server, the network protocol, a game host and a client library are built and tested (also over sockets). The
 desktop client plays a network game: the Multi-player item opens a lobby (game list from a list server, host,
 join by address); `--host [port]`, `--join host[:port]` and `--name` start one from the command line. Nothing has
-been tried against the original C++ client.
+been tried against the original C++ client. A host sets survivor rounds, an end condition (frags, time,
+points, lines) and the minimum combo on the multi-player screen.
 Newer rules (hot potato, blind attacks) are not planned. See [`doc/spike-notes.md`](doc/spike-notes.md) for what is verified and what is not.
 
 The original game is licensed under the LGPL; see [`LICENSE`](LICENSE). The art and sounds come from the

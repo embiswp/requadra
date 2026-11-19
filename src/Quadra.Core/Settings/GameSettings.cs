@@ -77,6 +77,31 @@ public sealed class PlayerSettings
     }
 }
 
+/// <summary>The rules of a game this player hosts (the game packet's rule fields).</summary>
+public sealed class HostSettings
+{
+    public const int MaxComboMin = 4;
+    public const int MaxEndValue = 999;
+
+    public bool Survivor { get; set; }
+
+    public Net.GameEnd End { get; set; }
+
+    /// <summary>Frags, minutes, thousands of points or lines, by <see cref="End"/>.</summary>
+    public int EndValue { get; set; }
+
+    /// <summary>The fewest lines cleared at once that send any.</summary>
+    public int ComboMin { get; set; }
+
+    internal void Normalize()
+    {
+        if (!Enum.IsDefined(End))
+            End = Net.GameEnd.Never;
+        EndValue = Math.Clamp(EndValue, 0, MaxEndValue);
+        ComboMin = Math.Clamp(ComboMin, 0, MaxComboMin);
+    }
+}
+
 /// <summary>Everything the player can set (<c>Config</c>); saved as JSON.</summary>
 public sealed class GameSettings
 {
@@ -97,6 +122,9 @@ public sealed class GameSettings
 
     /// <summary>The last <c>host[:port]</c> typed on the multi-player screen.</summary>
     public string LastAddress { get; set; } = "";
+
+    /// <summary>What "Host a game" on the multi-player screen starts.</summary>
+    public HostSettings Rules { get; set; } = new();
 
     [JsonIgnore]
     public PlayerSettings CurrentPlayer => Players[SetupPlayer];
@@ -121,6 +149,8 @@ public sealed class GameSettings
         Language = Math.Clamp(Language, 0, LanguageCount - 1);
         ListServer = (ListServer ?? "").Trim();
         LastAddress = (LastAddress ?? "").Trim();
+        Rules ??= new HostSettings();
+        Rules.Normalize();
     }
 }
 

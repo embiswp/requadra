@@ -46,7 +46,10 @@ public sealed partial class QuadraGame
             var gameHost = new GameHost(new HostRules
             {
                 Name = $"{_settings.CurrentPlayer.Name}'s game", Seed = Environment.TickCount,
-                GameEnd = _options.GameEnd, GameEndValue = _options.GameEndValue, Survivor = _options.Survivor,
+                GameEnd = fromMenu ? _settings.Rules.End : _options.GameEnd,
+                GameEndValue = fromMenu ? _settings.Rules.EndValue : _options.GameEndValue,
+                Survivor = fromMenu ? _settings.Rules.Survivor : _options.Survivor,
+                ComboMin = (byte)(fromMenu ? _settings.Rules.ComboMin : 0),
             });
             try
             {

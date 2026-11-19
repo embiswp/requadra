@@ -534,6 +534,12 @@ last round; the animation itself is the single-player code, which was checked on
 - **Not done:** the winner's board fill ("first frag" animation), round wins in the stats, a player who leaves
   mid-round is simply dropped (the original keeps them as gone), idle players, and a late joiner.
 
+- **Rules menu:** the lobby has a row for the rules "Host a game" starts with: survivor on/off, end condition
+  (never, frags, minutes, thousands of points, lines), its value, and the minimum combo (0 to 4). Left and right
+  arrows step a value, a click steps it forward; saved in the settings file (`Rules`). `--survivor` and `--end`
+  still apply when hosting from the command line. Tested in `LobbyTests`. Not looked at on screen: the window
+  would not open in this session, so the positions of the new row (y 426, status moved to y 458) are unchecked.
+
 ## Suggested next steps
 
 1. Play the client and tune the feel: sound balance, speed per level, key timing, menu use.

@@ -149,7 +149,7 @@ public static class MenuLayouts
 
     public const int LobbyRows = 10;
     public const int LobbyListX = 40, LobbyListY = 84, LobbyListWidth = 560, LobbyRowStep = 22;
-    public const int LobbyButtonY = 330, LobbyAddressY = 366, LobbyServerY = 402, LobbyStatusY = 434;
+    public const int LobbyButtonY = 330, LobbyAddressY = 362, LobbyServerY = 394, LobbyRulesY = 426, LobbyStatusY = 458;
     public const int LobbyHostX = 40, LobbyHostWidth = 150, LobbyRefreshX = 220, LobbyRefreshWidth = 100;
     public const int LobbyFieldX = 150, LobbyAddressWidth = 250, LobbyServerWidth = 450, LobbyJoinX = 420, LobbyJoinWidth = 60;
 
@@ -167,6 +167,10 @@ public static class MenuLayouts
         items.Add(new MenuItem("address", LobbyFieldX, LobbyAddressY, LobbyAddressWidth, 22));
         items.Add(new MenuItem("join", LobbyJoinX, LobbyAddressY, LobbyJoinWidth, 22));
         items.Add(new MenuItem("server", LobbyFieldX, LobbyServerY, LobbyServerWidth, 22));
+        items.Add(new MenuItem("survivor", 105, LobbyRulesY, 50, 22));
+        items.Add(new MenuItem("end", 205, LobbyRulesY, 90, 22));
+        items.Add(new MenuItem("endvalue", 300, LobbyRulesY, 50, 22));
+        items.Add(new MenuItem("combo", 420, LobbyRulesY, 40, 22));
         items.Add(new MenuItem("back", BackButtonX, BackButtonY, BackButtonWidth, BackButtonHeight));
         return new MenuScreen(items);
     }
