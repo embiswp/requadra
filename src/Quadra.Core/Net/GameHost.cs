@@ -2,47 +2,6 @@ using Quadra.Core.Game;
 
 namespace Quadra.Core.Net;
 
-/// <summary>Where the host sends packets for one connection (a TCP socket, or an in-process pipe in tests).</summary>
-public interface IPacketSink
-{
-    void Send(Packet packet);
-
-    /// <summary>The host is done with this connection.</summary>
-    void Close();
-}
-
-/// <summary>One connection to a <see cref="GameHost"/>.</summary>
-public sealed class HostPeer
-{
-    internal HostPeer(IPacketSink sink) => Sink = sink;
-
-    internal IPacketSink Sink { get; }
-
-    /// <summary>The peer has asked to join and been answered; until then only chat gets through.</summary>
-    public bool Joined { get; internal set; }
-
-    /// <summary>The slots this connection plays; only it may send packets for them.</summary>
-    public HashSet<byte> Slots { get; } = [];
-
-    internal bool Closed { get; set; }
-}
-
-/// <summary>What the host announces and enforces; the fields of the game packet that do not change during a game.</summary>
-public sealed record HostRules
-{
-    public string Name { get; init; } = "Quadra";
-    public int NetVersion { get; init; } = PacketEncoder.CurrentVersion;
-    public int Seed { get; init; }
-    public byte LevelStart { get; init; } = 1;
-    public bool NoLevelUp { get; init; }
-    public bool Survivor { get; init; }
-    public byte ComboMin { get; init; }
-    public bool AllowHandicap { get; init; } = true;
-    public int MaxPlayers { get; init; } = PacketDecoder.MaxPlayers;
-    public GameEnd GameEnd { get; init; }
-    public int GameEndValue { get; init; }
-}
-
 /// <summary>
 /// The server side of a network game: a port of <c>Net_server</c> in legacy/source/net_server.cc. It
 /// answers joins, hands out player slots, and relays what each client does to all the others, checking
@@ -65,6 +24,7 @@ public sealed class GameHost
 
     private readonly object _lock = new();
     private readonly List<HostPeer> _peers = [];
+    private readonly SurvivorRounds _rounds;
     private uint _nextPlayerId = 1;
 
     public GameHost(HostRules rules)
@@ -84,6 +44,7 @@ public sealed class GameHost
             GameEnd = rules.GameEnd,
             GameEndValue = rules.GameEndValue,
         });
+        _rounds = new SurvivorRounds(State, packet => Broadcast(packet));
     }
 
     public HostRules Rules { get; }
@@ -110,15 +71,17 @@ public sealed class GameHost
     public int WinningTeam { get; private set; } = -1;
 
     /// <summary>Where a survivor game is in its round change (<c>Net_list::syncpoint</c>); <see cref="RoundState.Last"/> while a round runs.</summary>
-    public RoundState SyncPoint { get; private set; } = RoundState.Last;
+    public RoundState SyncPoint => _rounds.SyncPoint;
 
     /// <summary>Rounds that have finished (survivor games).</summary>
-    public int Rounds { get; private set; }
+    public int Rounds => _rounds.Rounds;
 
     /// <summary>Where the seed of a new survivor round comes from.</summary>
-    public Func<uint> NewSeed { get; set; } = () => (uint)Random.Shared.NextInt64(0, 1L << 32);
-
-    private bool _validFrag;
+    public Func<uint> NewSeed
+    {
+        get => _rounds.NewSeed;
+        set => _rounds.NewSeed = value;
+    }
 
     public int PeerCount
     {
@@ -176,7 +139,7 @@ public sealed class GameHost
             if (!_peers.Remove(peer))
                 return;
             foreach (var slot in peer.Slots.ToList())
-                Drop(slot, DropReason.Auto, except: peer);
+                DropPlayer(slot, DropReason.Auto, except: peer);
         }
     }
 
@@ -190,7 +153,7 @@ public sealed class GameHost
             if (Started && !Paused && !Terminated)
             {
                 Frames++;
-                CheckEnd(CheckRound());
+                CheckEnd(_rounds.Check());
             }
         }
     }
@@ -215,68 +178,8 @@ public sealed class GameHost
 
         Terminated = true;
         WinningTeam = leader;
-        Dispatch(new EndGamePacket(true) { Id = (byte)PacketType.EndGame }, except: null, everyone: true);
+        Broadcast(new EndGamePacket(true) { Id = (byte)PacketType.EndGame }, everyone: true);
     }
-
-    /// <summary>
-    /// Runs a survivor game through its rounds (<c>Net_list::check_first_frag</c>): when one team is left the
-    /// survivors step aside, then everyone waits for the others, a new seed goes out and all restart together.
-    /// Returns whether the game may end now (anywhere in a game that is not survivor, at a round's end otherwise).
-    /// </summary>
-    private bool CheckRound()
-    {
-        if (!Rules.Survivor)
-            return true;
-        bool mayEnd = Rules.GameEnd == GameEnd.Time;
-        var players = State.Players.Values.ToList();
-
-        if (players.Count > 0 && players.All(p => p.Round == RoundState.WaitForWinner))
-        {
-            SyncTo(RoundState.WaitForRestart);
-            mayEnd = true;
-        }
-        if (players.Count > 0 && players.All(p => p.Round == RoundState.WaitForRestart))
-        {
-            if (SyncPoint == RoundState.WaitForRestart)
-            {
-                var seed = new ServerRandomPacket(NewSeed()) { Id = (byte)PacketType.ServerRandom };
-                State.Apply(seed);
-                Dispatch(seed, except: null);
-            }
-            SyncTo(RoundState.Playing);
-        }
-        if (players.Count == 0 || players.All(p => p.Round == RoundState.Playing))
-            SyncTo(RoundState.Last);
-
-        if (SyncPoint != RoundState.Last)
-            return mayEnd;
-
-        // A round is on. It is over when the players left alive are all of one team and others are waiting to play.
-        if (players.Where(p => p.Alive).Select(p => p.Team).Distinct().Count() > 1)
-        {
-            _validFrag = true;
-        }
-        else if (_validFrag)
-        {
-            var survivors = players.Where(p => p.Alive).Select(p => p.Team).Distinct().ToList();
-            Say(survivors.Count == 0 ? "Nobody wins the round" : $"Team {survivors[0] + 1} wins the round");
-            SyncTo(RoundState.WaitForWinner);
-            Rounds++;
-            _validFrag = false;
-        }
-        return mayEnd;
-    }
-
-    private void SyncTo(RoundState point)
-    {
-        if (SyncPoint == point)
-            return;
-        SyncPoint = point;
-        Dispatch(new StatePacket((byte)point) { Id = (byte)PacketType.ServerState, Slot = 255 }, except: null);
-    }
-
-    private void Say(string text) =>
-        Dispatch(new ChatPacket(-1, -1, text) { Id = (byte)PacketType.Chat }, except: null);
 
     public void Receive(HostPeer peer, Packet packet)
     {
@@ -292,16 +195,16 @@ public sealed class GameHost
             switch ((PacketType)packet.Id)
             {
                 case PacketType.WantJoin:
-                    WantJoin(peer, (WantJoinPacket)packet);
+                    HandleJoinRequest(peer, (WantJoinPacket)packet);
                     break;
                 case PacketType.PlayerWantJoin:
-                    PlayerWantJoin(peer, (PlayerWantJoinPacket)packet);
+                    HandlePlayerRequest(peer, (PlayerWantJoinPacket)packet);
                     break;
                 case PacketType.ClientChat:
-                    Dispatch(packet with { Id = (byte)PacketType.Chat }, except: null, everyone: true);
+                    Broadcast(packet with { Id = (byte)PacketType.Chat }, everyone: true);
                     break;
                 case PacketType.ClientPause:
-                    ClientPause(peer);
+                    HandlePauseRequest(peer);
                     break;
                 case PacketType.ClientTestPing:
                     peer.Sink.Send(packet with { Id = (byte)PacketType.TestPing });
@@ -310,8 +213,8 @@ public sealed class GameHost
                     Close(peer);
                     break;
                 case PacketType.ClientDropPlayer:
-                    if (Owns(peer, packet) && packet is DropPlayerPacket drop)
-                        Drop(drop.Slot, drop.Reason, except: peer);
+                    if (PeerPlaysSlotOf(peer, packet) && packet is DropPlayerPacket drop)
+                        DropPlayer(drop.Slot, drop.Reason, except: peer);
                     break;
                 case PacketType.ClientStampBlock when Terminated:
                 case PacketType.ClientDead when Terminated:
@@ -326,8 +229,8 @@ public sealed class GameHost
                 case PacketType.ClientGone:
                 case PacketType.ClientState:
                 case PacketType.ClientRemoveBonus:
-                    if (Owns(peer, packet))
-                        Relay(peer, packet);
+                    if (PeerPlaysSlotOf(peer, packet))
+                        ApplyAndRelay(peer, packet);
                     break;
                     // Moves are only sent on to spectators, which this port does not have.
             }
@@ -335,31 +238,18 @@ public sealed class GameHost
     }
 
     // Packets about a player must come from the connection that plays it.
-    private bool Owns(HostPeer peer, Packet packet) =>
+    private bool PeerPlaysSlotOf(HostPeer peer, Packet packet) =>
         packet is PlayerPacketBase p && p.Slot < PacketDecoder.MaxPlayers && peer.Slots.Contains(p.Slot);
 
-    private static PacketType RelayedAs(PacketType client) => client switch
+    private void ApplyAndRelay(HostPeer from, Packet packet)
     {
-        PacketType.ClientStampBlock => PacketType.StampBlock,
-        PacketType.ClientDead => PacketType.Dead,
-        PacketType.ClientRespawn => PacketType.Respawn,
-        PacketType.ClientLines => PacketType.Lines,
-        PacketType.ClientFirstFrag => PacketType.FirstFrag,
-        PacketType.ClientGone => PacketType.Gone,
-        PacketType.ClientState => PacketType.State,
-        PacketType.ClientRemoveBonus => PacketType.RemoveBonus,
-        _ => client,
-    };
-
-    private void Relay(HostPeer from, Packet packet)
-    {
-        var relayed = packet with { Id = (byte)RelayedAs((PacketType)packet.Id) };
+        var relayed = ClientPacketRelay.AsRelayed(packet);
         State.Apply(relayed);
-        Dispatch(relayed, except: from);
+        Broadcast(relayed, except: from);
     }
 
-    // Sends to every joined connection but the one it came from (which already did it itself).
-    private void Dispatch(Packet packet, HostPeer? except, bool everyone = false)
+    // Sends to every joined connection (or every connection, with everyone) but the one it came from, which already did it itself.
+    private void Broadcast(Packet packet, HostPeer? except = null, bool everyone = false)
     {
         Recorder?.Add((uint)Frames, packet);
         foreach (var peer in _peers.ToList())
@@ -381,7 +271,7 @@ public sealed class GameHost
         peer.Sink.Close();
     }
 
-    private void WantJoin(HostPeer peer, WantJoinPacket want)
+    private void HandleJoinRequest(HostPeer peer, WantJoinPacket want)
     {
         // 1.1.0 clients are ignored, and nobody can come in once the game is over.
         if (!want.Current || peer.Joined)
@@ -424,7 +314,7 @@ public sealed class GameHost
             }
     }
 
-    private void PlayerWantJoin(HostPeer peer, PlayerWantJoinPacket want)
+    private void HandlePlayerRequest(HostPeer peer, PlayerWantJoinPacket want)
     {
         bool valid = want.Team < PacketDecoder.MaxTeams && want.Player <= 2 && want.Smooth is 0 or 1 && want.Shadow is 0 or 1
                      && want.Handicap is >= 0 and <= 4 && want.HRepeat is >= 0 and <= 3 && want.VRepeat is >= 0 and <= 3;
@@ -459,14 +349,14 @@ public sealed class GameHost
             };
             State.Apply(player with { }, want.PlayerHash);
             peer.Slots.Add(slot);
-            Dispatch(player, except: peer);
+            Broadcast(player, except: peer);
             answer = answer with { Pos = slot };
         }
         Send(peer, answer);
     }
 
     // The first connection to ask, or any when the game is waiting, may start it; afterwards a request pauses and resumes.
-    private void ClientPause(HostPeer peer)
+    private void HandlePauseRequest(HostPeer peer)
     {
         if (DelayStart is > 0 and not WaitingForStart)
             return;   // never interrupt the countdown
@@ -488,16 +378,16 @@ public sealed class GameHost
         {
             Paused = !Paused;
         }
-        Dispatch(new PausePacket(who) { Id = (byte)PacketType.Pause }, except: null);
+        Broadcast(new PausePacket(who) { Id = (byte)PacketType.Pause });
     }
 
-    private void Drop(byte slot, DropReason reason, HostPeer? except)
+    private void DropPlayer(byte slot, DropReason reason, HostPeer? except)
     {
         if (!State.Players.ContainsKey(slot))
             return;
         State.Remove(slot);
         foreach (var peer in _peers)
             peer.Slots.Remove(slot);
-        Dispatch(new DropPlayerPacket(reason) { Id = (byte)PacketType.DropPlayer, Slot = slot }, except);
+        Broadcast(new DropPlayerPacket(reason) { Id = (byte)PacketType.DropPlayer, Slot = slot }, except);
     }
 }

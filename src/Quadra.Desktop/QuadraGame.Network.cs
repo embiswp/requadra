@@ -1,4 +1,3 @@
-using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Xna.Framework;
@@ -21,8 +20,7 @@ public sealed partial class QuadraGame
 {
     private enum NetworkStage { Connecting, Joining, Waiting, Playing, Failed }
 
-    private TcpGameServer? _server;
-    private LanResponder? _lan;
+    private HostingSession? _hosting;
     private TcpGameLink? _network;
     private Task<TcpGameLink>? _connecting;
     private NetworkGame? _netGame;
@@ -54,32 +52,21 @@ public sealed partial class QuadraGame
             });
             try
             {
-                _server = new TcpGameServer(gameHost, IPAddress.Any, port);
-                _server.Start();
+                _hosting = new HostingSession(gameHost, port, ListServerUri(), _http);
             }
             catch (System.Net.Sockets.SocketException e)
             {
-                _server = null;
                 _flow.ReturnToLobby($"Could not host on port {port}: {e.Message}");
                 return;
             }
-            port = _server.Port;
+            port = _hosting.Port;
             host = "127.0.0.1";
-            AnnounceHost(gameHost, port);
-            try
-            {
-                _lan = new LanResponder(gameHost, port);
-            }
-            catch (System.Net.Sockets.SocketException)
-            {
-                _lan = null;       // the UDP port is taken (a second game on this machine): only the list server will show it
-            }
         }
 
         _networkActive = true;
         _netGame = null;
-        _accumulatorMs = 0;
-        CreateBindings();
+        _unplayedMs = 0;
+        _controls.Reset(_settings.CurrentPlayer);
         _stage = NetworkStage.Connecting;
         _networkMessage = $"Connecting to {host}:{port}...";
         _connecting = Task.Run(() => TcpGameLink.ConnectAsync(host, port));
@@ -96,14 +83,9 @@ public sealed partial class QuadraGame
 
     // ---- the lobby: the game list from the list server ---------------------------------------------------
 
-    private HostAnnouncer? _announcer;
-
-    /// <summary>A hosted game announces itself to the list server, if one is set.</summary>
-    private void AnnounceHost(GameHost host, int port)
-    {
-        if (_settings.ListServer.Length > 0 && Uri.TryCreate(_settings.ListServer, UriKind.Absolute, out var uri))
-            _announcer = new HostAnnouncer(host, new QservClient(_http, uri), port);
-    }
+    /// <summary>The list server the settings name, or null if none is set or it is not an address.</summary>
+    private Uri? ListServerUri() =>
+        _settings.ListServer.Length > 0 && Uri.TryCreate(_settings.ListServer, UriKind.Absolute, out var uri) ? uri : null;
 
     private void UpdateLobby()
     {
@@ -131,10 +113,6 @@ public sealed partial class QuadraGame
 
     private void StopNetwork()
     {
-        _lan?.Dispose();
-        _lan = null;
-        _announcer?.DisposeAsync().AsTask().Wait(3000);
-        _announcer = null;
         _netGame = null;
         if (_network is { } link)
         {
@@ -142,17 +120,17 @@ public sealed partial class QuadraGame
             link.DisposeAsync().AsTask().Wait(1000);
         }
         _network = null;
-        _server?.DisposeAsync().AsTask().Wait(1000);
-        _server = null;
+        _hosting?.Stop();
+        _hosting = null;
     }
 
     private void UpdateNetwork(KeyboardState keyboard, GameTime gameTime)
     {
-        if (Pressed(keyboard, Keys.Escape) && _chatText is not null)
+        if (WasPressed(keyboard, Keys.Escape) && _chatText is not null)
         {
             _chatText = null;
         }
-        else if (Pressed(keyboard, Keys.Escape))
+        else if (WasPressed(keyboard, Keys.Escape))
         {
             StopNetwork();
             _networkActive = false;
@@ -227,7 +205,7 @@ public sealed partial class QuadraGame
 
         // Pump has applied the answer already, so the local player is in the replicated state.
         var settings = _settings.CurrentPlayer;
-        _netGame = new NetworkGame(client, answer.Pos, _keys, CreateBindings(), settings.HorizontalSpeed, settings.ContinuousDown);
+        _netGame = new NetworkGame(client, answer.Pos, _controls.State, _controls.Reset(settings), settings.HorizontalSpeed, settings.ContinuousDown);
         _view.ShowShadow = settings.Shadow;
         _view.SmoothMovement = settings.Smooth;
         _networkLevel = 0;
@@ -252,39 +230,33 @@ public sealed partial class QuadraGame
         bool chatting = _chatText is not null;
         if (chatting)
         {
-            if (Pressed(keyboard, Keys.Back) && _chatText!.Length > 0)
+            if (WasPressed(keyboard, Keys.Back) && _chatText!.Length > 0)
                 _chatText = _chatText[..^1];
-            if (Pressed(keyboard, Keys.Enter))
+            if (WasPressed(keyboard, Keys.Enter))
             {
                 game.Say(_chatText!);
                 _chatText = null;
             }
-            _keys.ClearAll();
+            _controls.State.ClearAll();
         }
-        else if (Pressed(keyboard, Keys.T))
+        else if (WasPressed(keyboard, Keys.T))
         {
             _chatText = "";
         }
-        else if (!game.Started && game.Countdown == GameHost.WaitingForStart && Pressed(keyboard, Keys.Enter))
+        else if (!game.Started && game.Countdown == GameHost.WaitingForStart && WasPressed(keyboard, Keys.Enter))
         {
             client.RequestPause();
         }
 
-        foreach (var key in chatting ? [] : _gameKeys)
-        {
-            bool down = keyboard.IsKeyDown(key), was = _previousKeys.IsKeyDown(key);
-            if (down && !was)
-                _keys.Down((int)key);
-            else if (!down && was)
-                _keys.Up((int)key);
-        }
+        if (!chatting)
+            _controls.Feed(keyboard, _previousKeys);
 
-        _accumulatorMs = Math.Min(_accumulatorMs + (int)gameTime.ElapsedGameTime.TotalMilliseconds, MaxCatchUpMs);
-        while (_accumulatorMs >= StepMs)
+        _unplayedMs = Math.Min(_unplayedMs + (int)gameTime.ElapsedGameTime.TotalMilliseconds, MaxCatchUpMs);
+        while (_unplayedMs >= StepMs)
         {
-            _accumulatorMs -= StepMs;
+            _unplayedMs -= StepMs;
             game.Update();
-            PlayNetworkEvents(game);
+            _sounds.PlayEvents(game.Events, game.Player.Level);
         }
 
         _stage = game.Started ? NetworkStage.Playing : NetworkStage.Waiting;
@@ -295,27 +267,6 @@ public sealed partial class QuadraGame
         }
         if (_network.Closed.IsCompleted)
             Fail("The connection to the host ended.");
-    }
-
-    private void PlayNetworkEvents(NetworkGame game)
-    {
-        var set = SoundCues.ForLevel(game.Player.Level);
-        foreach (var e in game.Events)
-        {
-            SoundCue? cue = e.Kind switch
-            {
-                GameEventKind.Rotated => _cues.Rotate(set, e.Column),
-                GameEventKind.Stamped => _cues.Stamp(set, e.Column),
-                GameEventKind.LineFlash => _cues.LineFlash(set, e.Combo),
-                GameEventKind.BlocksFell => _cues.Fall(e.Value, e.Combo),
-                GameEventKind.LevelUp => _cues.LevelUp(),
-                GameEventKind.GameOver => _cues.Death(set),
-                _ => null,
-            };
-            if (cue is { } c)
-                _assets.Play(c, MasterVolume);
-        }
-        game.Events.Clear();
     }
 
     private void DrawNetwork()
@@ -346,14 +297,5 @@ public sealed partial class QuadraGame
         _overlay.SetData(_view.Overlay.Pixels);
         _batch.Draw(_background.Picture, Vector2.Zero, Color.White);
         _batch.Draw(_overlay, Vector2.Zero, Color.White);
-    }
-}
-
-public sealed partial class QuadraGame
-{
-    private void TypeChat(char c)
-    {
-        if (_chatText is not null && c >= ' ' && c <= '~' && _chatText.Length < NetworkGame.MaxChatLength)
-            _chatText += c;
     }
 }

@@ -223,20 +223,9 @@ public sealed class GameClient
     /// <summary>Applies the packet to the local copy of the game and sends it to the host.</summary>
     private void Do(Packet clientPacket)
     {
-        State?.Apply(clientPacket with { Id = (byte)Relayed((PacketType)clientPacket.Id) });
+        State?.Apply(ClientPacketRelay.AsRelayed(clientPacket));
         _send(clientPacket);
     }
-
-    private static PacketType Relayed(PacketType client) => client switch
-    {
-        PacketType.ClientStampBlock => PacketType.StampBlock,
-        PacketType.ClientDead => PacketType.Dead,
-        PacketType.ClientRespawn => PacketType.Respawn,
-        PacketType.ClientLines => PacketType.Lines,
-        PacketType.ClientFirstFrag => PacketType.FirstFrag,
-        PacketType.ClientState => PacketType.State,
-        _ => client,
-    };
 
     /// <summary>A piece of local player <paramref name="slot"/> has landed.</summary>
     public void Stamp(byte slot, int x, int y, int rotation, int dropScore, int frame = 0, bool blockRotated = false, int timeHeld = 0) =>

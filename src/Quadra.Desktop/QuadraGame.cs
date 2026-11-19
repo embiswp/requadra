@@ -19,7 +19,6 @@ public sealed partial class QuadraGame : Game
 {
     private const int MaxCatchUpMs = 300;
     private const int StepMs = 1000 / SinglePlayerGame.FramesPerSecond;
-    private const float MasterVolume = 0.6f;
     private const int GameOverDelayMs = 2500;
 
     private readonly StartupOptions _options;
@@ -34,7 +33,8 @@ public sealed partial class QuadraGame : Game
     private AppFlow _flow = null!;
     private SinglePlayerView _view = null!;
     private MenuPainter _menus = null!;
-    private SoundCues _cues = null!;
+    private GameSounds _sounds = null!;
+    private ScriptedInput? _script;
     private RenderTarget2D _screen = null!;      // the original's 640 x 480, scaled to the window
     private Texture2D _overlay = null!;          // painted board and texts, or the menu controls
     private Texture2D _pauseSign = null!;
@@ -44,14 +44,13 @@ public sealed partial class QuadraGame : Game
     private KeyboardState _previousKeys;
     private MouseState _previousMouse;
     private Screen _shownScreen = Screen.Main;
-    private int _hoverIndex = -1;
+    private int _hoveredItem = -1;
 
     // The game in progress.
     private SinglePlayerGame? _game;
-    private KeyStates _keys = new();
-    private Keys[] _gameKeys = [];
+    private readonly PlayerControls _controls = new();
     private int _shownLevel;
-    private int _accumulatorMs;
+    private int _unplayedMs;           // time that has passed but not yet been played as 10 ms game steps
     private int _updates;
     private bool _paused;
     private bool _fullscreen;
@@ -106,7 +105,7 @@ public sealed partial class QuadraGame : Game
             () => SaveQuietly(() => _scores.Save(_scoresPath)));
         _view = new SinglePlayerView(_assets.TextFont, _assets.NumberFont, _flow.Text) { LevelUpBanner = _assets.LevelUpBanner };
         _menus = new MenuPainter(_assets.TextFont, _assets.NumberFont, _assets.Sprite);
-        _cues = new SoundCues(new Random(), _assets.SampleRate);
+        _sounds = new GameSounds(_assets, new SoundCues(new Random(), _assets.SampleRate));
         _screen = new RenderTarget2D(GraphicsDevice, SinglePlayerView.ScreenWidth, SinglePlayerView.ScreenHeight);
         _overlay = new Texture2D(GraphicsDevice, SinglePlayerView.ScreenWidth, SinglePlayerView.ScreenHeight);
         _pauseSign = _assets.ToTexture(_assets.PauseBanner);
@@ -115,7 +114,7 @@ public sealed partial class QuadraGame : Game
 
         if (_options.Screen is { } name && Enum.TryParse<Screen>(name, ignoreCase: true, out var screen))
         {
-            _flow.Show(screen == Screen.HighScores ? screen : screen);
+            _flow.Show(screen);
             if (screen == Screen.Playing)
                 StartGame();
             if (_options.Focus is { } focus)
@@ -143,7 +142,7 @@ public sealed partial class QuadraGame : Game
     {
         var (keyboard, mouse) = ReadInput();
 
-        if (Pressed(keyboard, Keys.F11))
+        if (WasPressed(keyboard, Keys.F11))
             ToggleFullscreen();
 
         if (_networkActive)
@@ -164,74 +163,31 @@ public sealed partial class QuadraGame : Game
         _previousMouse = mouse;
 
         _updates++;
-        bool scriptDone = _script is { Count: 0 } && _scriptIdle++ > 4;
-        if (_options.Script is not null ? scriptDone : _options.SmokeUpdates > 0 && _updates >= _options.SmokeUpdates + (_options.ScreenshotPath is null ? 0 : 1))
+        if (_script is not null ? _script.IsDone : _options.SmokeUpdates > 0 && _updates >= _options.SmokeUpdates + (_options.ScreenshotPath is null ? 0 : 1))
             Exit();
         base.Update(gameTime);
     }
 
-    // ---- scripted input (for checking the program without a person) ------------------------------------
-
-    private Queue<string>? _script;
-    private int _scriptIdle;
-    private Point _scriptMouse;
-
-    /// <summary>
-    /// The real keyboard and mouse, or in a scripted run one step of the script per update:
-    /// <c>move x y</c> (screen coordinates of the 640 x 480 picture), <c>click</c>, <c>key Name</c>,
-    /// <c>type text</c> and <c>wait n</c>. A key or click lasts one update, so each shows as a press.
-    /// </summary>
+    /// <summary>The real keyboard and mouse, or in a scripted run what the script does in this update.</summary>
     private (KeyboardState Keyboard, MouseState Mouse) ReadInput()
     {
         if (_options.Script is null)
             return (Keyboard.GetState(), Mouse.GetState());
-
-        _script ??= new Queue<string>(_options.Script.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
-        var keys = new List<Keys>();
-        bool click = false;
-        if (_script.Count > 0)
-        {
-            string[] step = _script.Dequeue().Split(' ', 2, StringSplitOptions.TrimEntries);
-            switch (step[0])
-            {
-                case "move":
-                    var p = step[1].Split(' ');
-                    _scriptMouse = ToWindow(int.Parse(p[0]), int.Parse(p[1]));
-                    break;
-                case "click": click = true; break;
-                case "key": keys.Add(Enum.Parse<Keys>(step[1])); break;
-                case "type":
-                    foreach (char c in step[1])
-                        OnTextInput(this, new TextInputEventArgs(c));
-                    break;
-                case "wait":
-                    for (int n = int.Parse(step[1]) - 1; n > 0; n--)
-                        _script = new Queue<string>(_script.Prepend("wait 1"));
-                    break;
-            }
-        }
-        return (new KeyboardState(keys.ToArray()),
-            new MouseState(_scriptMouse.X, _scriptMouse.Y, 0, click ? ButtonState.Pressed : ButtonState.Released,
-                ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released));
-    }
-
-    private Point ToWindow(int x, int y)
-    {
-        var r = FittedRectangle();
-        return new Point(r.X + x * r.Width / SinglePlayerView.ScreenWidth, r.Y + y * r.Height / SinglePlayerView.ScreenHeight);
+        _script ??= new ScriptedInput(_options.Script, (x, y) => Fit.ToWindow(x, y), c => OnTextInput(this, new TextInputEventArgs(c)));
+        return _script.Next();
     }
 
     private void OnScreenChanged()
     {
         var previous = _shownScreen;
         _shownScreen = _flow.Current;
-        _hoverIndex = -1;
+        _hoveredItem = -1;
         if (_flow.Current == Screen.Playing)
             StartGame();
         else if (previous == Screen.Playing)
             _game = null;
         if (_flow.Current == Screen.HighScores && _flow.HighlightedRank >= 0)
-            _assets.Play(_cues.LevelUp(), MasterVolume);     // the original celebrates a new high score
+            _sounds.NewHighScore();
     }
 
     private void UpdateMenu(KeyboardState keyboard, MouseState mouse)
@@ -240,20 +196,20 @@ public sealed partial class QuadraGame : Game
         var setup = _flow.Current == Screen.Setup ? _flow.Setup : null;
 
         // Pointer: hovering focuses (with a sound), a click activates.
-        var point = ToScreen(mouse.X, mouse.Y);
+        var point = Fit.ToPicture(mouse.X, mouse.Y);
         if (mouse.X != _previousMouse.X || mouse.Y != _previousMouse.Y)
         {
             menu.PointerMoved(point.X, point.Y);
-            if (menu.Focus != _hoverIndex)
+            if (menu.Focus != _hoveredItem)
             {
-                _hoverIndex = menu.Focus;
+                _hoveredItem = menu.Focus;
                 if (menu.Focus >= 0)
-                    _assets.Play(_cues.MenuHover(), MasterVolume);
+                    _sounds.MenuHover();
             }
         }
         if (mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released
             && menu.PointerPressed(point.X, point.Y) is { } clicked)
-            Choose(clicked);
+            ChooseMenuItem(clicked);
 
         // Keyboard.
         if (setup is { Mode: SetupMode.CapturingKey })
@@ -267,57 +223,66 @@ public sealed partial class QuadraGame : Game
         }
         if (setup is { Mode: SetupMode.EditingName or SetupMode.EditingPassword })
         {
-            if (Pressed(keyboard, Keys.Back))
+            if (WasPressed(keyboard, Keys.Back))
                 setup.Backspace();
-            if (Pressed(keyboard, Keys.Enter))
+            if (WasPressed(keyboard, Keys.Enter))
                 setup.Commit();
-            if (Pressed(keyboard, Keys.Escape))
+            if (WasPressed(keyboard, Keys.Escape))
                 _flow.Back();
             return;
         }
 
         if (_flow.Current == Screen.Lobby && _flow.Lobby.Edit != LobbyEdit.None)
         {
-            if (Pressed(keyboard, Keys.Back))
+            if (WasPressed(keyboard, Keys.Back))
                 _flow.Lobby.Backspace();
-            if (Pressed(keyboard, Keys.Enter))
+            if (WasPressed(keyboard, Keys.Enter))
                 _flow.Back();       // Enter and Escape both end the typing; the text stays
-            if (Pressed(keyboard, Keys.Escape))
+            if (WasPressed(keyboard, Keys.Escape))
                 _flow.Back();
             return;
         }
 
-        if (Pressed(keyboard, Keys.Down))
-            Moved(menu, 1);
-        if (Pressed(keyboard, Keys.Up))
-            Moved(menu, -1);
+        if (WasPressed(keyboard, Keys.Down))
+            MoveMenuFocus(menu, 1);
+        if (WasPressed(keyboard, Keys.Up))
+            MoveMenuFocus(menu, -1);
         if (menu.FocusedItem is { } focused)
         {
-            if (Pressed(keyboard, Keys.Left))
+            if (WasPressed(keyboard, Keys.Left))
                 _flow.Cycle(focused.Id, -1);
-            if (Pressed(keyboard, Keys.Right))
+            if (WasPressed(keyboard, Keys.Right))
                 _flow.Cycle(focused.Id, 1);
-            if (Pressed(keyboard, Keys.Enter) || Pressed(keyboard, Keys.Space))
-                Choose(focused.Id);
+            if (WasPressed(keyboard, Keys.Enter) || WasPressed(keyboard, Keys.Space))
+                ChooseMenuItem(focused.Id);
         }
-        if (Pressed(keyboard, Keys.Escape))
+        if (WasPressed(keyboard, Keys.Escape))
             _flow.Back();
     }
 
-    private void Moved(MenuScreen menu, int direction)
+    private void MoveMenuFocus(MenuScreen menu, int direction)
     {
         menu.MoveFocus(direction);
-        _hoverIndex = menu.Focus;
-        _assets.Play(_cues.MenuHover(), MasterVolume);
+        _hoveredItem = menu.Focus;
+        _sounds.MenuHover();
     }
 
     /// <summary>Something was chosen: click sound (a tap sound for a value), then the flow decides.</summary>
-    private void Choose(string id)
+    private void ChooseMenuItem(string id)
     {
         bool isValue = _flow.Current == Screen.Setup && id is "player" or "shadow" or "smooth" or "hspeed" or "vspeed" or "continuous"
                        || _flow.Current == Screen.Options && id == "language";
-        _assets.Play(isValue ? _cues.MenuValue() : _cues.MenuClick(), MasterVolume);
+        if (isValue)
+            _sounds.MenuValue();
+        else
+            _sounds.MenuClick();
         _flow.Activate(id);
+    }
+
+    private void TypeChat(char c)
+    {
+        if (_chatText is not null && c >= ' ' && c <= '~' && _chatText.Length < NetworkGame.MaxChatLength)
+            _chatText += c;
     }
 
     private void OnTextInput(object? sender, TextInputEventArgs e)
@@ -330,33 +295,17 @@ public sealed partial class QuadraGame : Game
             _flow.Setup.TypeCharacter(e.Character);
     }
 
-    /// <summary>The current player's keys as bindings; also remembers which keys to report to <see cref="_keys"/>.</summary>
-    private KeyBindings CreateBindings()
-    {
-        var player = _settings.CurrentPlayer;
-        var defaults = PlayerSettings.DefaultKeys();
-        Keys Resolve(GameAction action) =>
-            Enum.TryParse<Keys>(player.Keys.GetValueOrDefault(action, defaults[action]), out var key) ? key : Enum.Parse<Keys>(defaults[action]);
-
-        _gameKeys = Enum.GetValues<GameAction>().Select(Resolve).Distinct().ToArray();
-        _keys = new KeyStates();
-        return new KeyBindings(
-            (int)Resolve(GameAction.Left), (int)Resolve(GameAction.Right), (int)Resolve(GameAction.RotateLeft),
-            (int)Resolve(GameAction.Down), (int)Resolve(GameAction.RotateRight), (int)Resolve(GameAction.RotateTwice),
-            (int)Resolve(GameAction.Drop));
-    }
-
     private void StartGame()
     {
         var player = _settings.CurrentPlayer;
-        var bindings = CreateBindings();
-        _game = new SinglePlayerGame(Environment.TickCount, _keys, bindings, player.HorizontalSpeed, player.VerticalSpeed,
+        var bindings = _controls.Reset(player);
+        _game = new SinglePlayerGame(Environment.TickCount, _controls.State, bindings, player.HorizontalSpeed, player.VerticalSpeed,
             _options.StartLevel, player.ContinuousDown);
         _view.ShowShadow = player.Shadow;
         _view.SmoothMovement = player.Smooth;
         _paused = false;
         _gameOverMs = 0;
-        _accumulatorMs = 0;
+        _unplayedMs = 0;
         _shownLevel = 0;
         ShowLevel(_game.DisplayedLevel);
     }
@@ -364,34 +313,35 @@ public sealed partial class QuadraGame : Game
     private void UpdatePlaying(KeyboardState keyboard, GameTime gameTime)
     {
         var game = _game!;
-        if (Pressed(keyboard, Keys.Escape))
+        if (WasPressed(keyboard, Keys.Escape))
         {
             _flow.Back();
             return;
         }
-        if (Pressed(keyboard, Keys.P) && !game.IsOver)
+        if (WasPressed(keyboard, Keys.P) && !game.IsOver)
         {
             _paused = !_paused;
-            _assets.Play(_cues.Pause(), MasterVolume);
+            _sounds.Pause();
         }
         if (game.IsOver)
         {
             // As in the original, a death goes on to the high scores; the dead board shows for a moment first.
             _gameOverMs += (int)gameTime.ElapsedGameTime.TotalMilliseconds;
-            if (_gameOverMs >= GameOverDelayMs || Pressed(keyboard, Keys.Enter) || Pressed(keyboard, Keys.Space))
+            if (_gameOverMs >= GameOverDelayMs || WasPressed(keyboard, Keys.Enter) || WasPressed(keyboard, Keys.Space))
                 _flow.GameFinished(game.Player.Score, game.Player.Lines, game.Player.Level);
             return;
         }
 
         if (_paused)
             return;
-        FeedKeys(keyboard);
-        _accumulatorMs = Math.Min(_accumulatorMs + (int)gameTime.ElapsedGameTime.TotalMilliseconds, MaxCatchUpMs);
-        while (_accumulatorMs >= StepMs)
+        _controls.Feed(keyboard, _previousKeys);
+        PlaySmokeInputs();
+        _unplayedMs = Math.Min(_unplayedMs + (int)gameTime.ElapsedGameTime.TotalMilliseconds, MaxCatchUpMs);
+        while (_unplayedMs >= StepMs)
         {
-            _accumulatorMs -= StepMs;
+            _unplayedMs -= StepMs;
             game.Update();
-            PlayGameEvents(game);
+            _sounds.PlayEvents(game.Events, game.DisplayedLevel);
         }
         if (game.DisplayedLevel != _shownLevel)
             ShowLevel(game.DisplayedLevel);
@@ -405,59 +355,24 @@ public sealed partial class QuadraGame : Game
         _view.SetPalette(_background.Palette);
     }
 
-    private void PlayGameEvents(SinglePlayerGame game)
+    /// <summary>A smoke run has no one at the keyboard: tap a few keys so every part of the game runs.</summary>
+    private void PlaySmokeInputs()
     {
-        var set = SoundCues.ForLevel(game.DisplayedLevel);
-        foreach (var e in game.Events)
-        {
-            SoundCue? cue = e.Kind switch
-            {
-                GameEventKind.Rotated => _cues.Rotate(set, e.Column),
-                GameEventKind.Stamped => _cues.Stamp(set, e.Column),
-                GameEventKind.LineFlash => _cues.LineFlash(set, e.Combo),
-                GameEventKind.BlocksFell => _cues.Fall(e.Value, e.Combo),
-                GameEventKind.LevelUp => _cues.LevelUp(),
-                GameEventKind.GameOver => _cues.Death(set),
-                _ => null,
-            };
-            if (cue is { } c)
-                _assets.Play(c, MasterVolume);
-        }
-        game.Events.Clear();
-    }
-
-    /// <summary>Reports key-down and key-up of the game's keys as events, the way an input layer should.</summary>
-    private void FeedKeys(KeyboardState now)
-    {
-        foreach (var key in _gameKeys)
-        {
-            bool down = now.IsKeyDown(key), was = _previousKeys.IsKeyDown(key);
-            if (down && !was)
-                _keys.Down((int)key);
-            else if (!down && was)
-                _keys.Up((int)key);
-        }
-
-        // A smoke run of the game has no one at the keyboard: tap a few keys so every part of it runs.
         if (_options.SmokeUpdates > 0 && _options.Screen is null or "play")
-            Autoplay();
+        {
+            int step = _updates % 40;
+            if (step == 0)
+                _controls.Tap(GameAction.Left);
+            if (step == 10)
+                _controls.Tap(GameAction.RotateRight);
+            if (step == 20)
+                _controls.State.Down((int)_controls.KeyFor(GameAction.Drop));
+        }
         if (_options.FadeTest && _updates == 10)
             _game!.StartLevelChange(_game.DisplayedLevel + 1);
     }
 
-    private void Autoplay()
-    {
-        int step = _updates % 40;
-        int left = (int)Resolve(GameAction.Left), rotate = (int)Resolve(GameAction.RotateRight), drop = (int)Resolve(GameAction.Drop);
-        if (step == 0) { _keys.Down(left); _keys.Up(left); }
-        if (step == 10) { _keys.Down(rotate); _keys.Up(rotate); }
-        if (step == 20) { _keys.Down(drop); }
-    }
-
-    private Keys Resolve(GameAction action) =>
-        Enum.TryParse<Keys>(_settings.CurrentPlayer.Keys[action], out var key) ? key : Keys.Space;
-
-    private bool Pressed(KeyboardState now, Keys key) => now.IsKeyDown(key) && !_previousKeys.IsKeyDown(key);
+    private bool WasPressed(KeyboardState now, Keys key) => now.IsKeyDown(key) && !_previousKeys.IsKeyDown(key);
 
     private void ToggleFullscreen()
     {
@@ -509,7 +424,7 @@ public sealed partial class QuadraGame : Game
 
         GraphicsDevice.Clear(Color.Black);
         _batch.Begin(samplerState: SamplerState.LinearClamp);
-        _batch.Draw(_screen, FittedRectangle(), Color.White);
+        _batch.Draw(_screen, Fit.Area, Color.White);
         _batch.End();
         base.Draw(gameTime);
     }
@@ -560,22 +475,8 @@ public sealed partial class QuadraGame : Game
         _batch.Draw(_overlay, Vector2.Zero, Color.White);
     }
 
-    private Rectangle FittedRectangle()
-    {
-        int w = GraphicsDevice.PresentationParameters.BackBufferWidth;
-        int h = GraphicsDevice.PresentationParameters.BackBufferHeight;
-        float scale = Math.Min(w / (float)SinglePlayerView.ScreenWidth, h / (float)SinglePlayerView.ScreenHeight);
-        int fw = (int)(SinglePlayerView.ScreenWidth * scale), fh = (int)(SinglePlayerView.ScreenHeight * scale);
-        return new Rectangle((w - fw) / 2, (h - fh) / 2, fw, fh);
-    }
-
-    /// <summary>Window pixels to the original's 640 x 480 coordinates.</summary>
-    private Point ToScreen(int x, int y)
-    {
-        var r = FittedRectangle();
-        return new Point((x - r.X) * SinglePlayerView.ScreenWidth / Math.Max(r.Width, 1),
-            (y - r.Y) * SinglePlayerView.ScreenHeight / Math.Max(r.Height, 1));
-    }
+    private PictureFit Fit =>
+        PictureFit.In(GraphicsDevice.PresentationParameters.BackBufferWidth, GraphicsDevice.PresentationParameters.BackBufferHeight);
 
     private void SaveScreenshot(string path)
     {

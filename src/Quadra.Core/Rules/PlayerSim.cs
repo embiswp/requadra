@@ -37,18 +37,14 @@ public readonly record struct ClearEvent(int Lines, int Combo, bool Clean);
 /// </summary>
 public sealed class PlayerSim
 {
-    public const int MaxPlayers = 8;
-    public const int NoAttacker = 255;
-    private const int MaxPendingGarbage = 20;
+    public const int MaxPlayers = IncomingGarbage.MaxPlayers;
+    public const int NoAttacker = IncomingGarbage.NoAttacker;
 
-    private readonly LegacyRandom _random;
+    private readonly PieceQueue _queue;
+    private readonly IncomingGarbage _garbage = new();
     private readonly int _startLevel;
     private readonly bool _levelUp;
     private int _level;
-    // [0] current piece, [1..3] the three upcoming ones, -1 = empty (as in Canvas::bloc/next*)
-    private readonly int[] _queue = [-1, -1, -1, -1];
-    private readonly int[] _attacks = new int[MaxPlayers];
-    private readonly List<int> _pendingGarbage = [];
     private readonly List<ClearPass> _lastClear = [];
     private readonly int[] _pieceCounts = new int[Pieces.Count];
     private readonly int[] _clearCounts = new int[15];
@@ -66,7 +62,7 @@ public sealed class PlayerSim
     /// </param>
     public PlayerSim(int gameSeed, int level, int verticalRepeat = 2, bool levelUp = false)
     {
-        _random = new LegacyRandom(gameSeed);
+        _queue = new PieceQueue(new LegacyRandom(gameSeed));
         _startLevel = level;
         _level = level;
         _levelUp = levelUp;
@@ -85,7 +81,7 @@ public sealed class PlayerSim
     public int LinesThisRun { get; private set; }
 
     /// <summary>The three pieces that will appear after the current one, soonest first.</summary>
-    public IReadOnlyList<int> Upcoming => [_queue[1], _queue[2], _queue[3]];
+    public IReadOnlyList<int> Upcoming => _queue.Upcoming;
     public int Stamps { get; private set; }
     public int InvalidStamps { get; private set; }
     public int Deaths { get; private set; }
@@ -115,13 +111,13 @@ public sealed class PlayerSim
     public int MovesAfterLanding { get; private set; }
 
     /// <summary>Slot of the player who most recently attacked this one, or <see cref="NoAttacker"/>.</summary>
-    public int LastAttacker { get; private set; } = NoAttacker;
+    public int LastAttacker => _garbage.LastAttacker;
 
     /// <summary>Hole columns of the garbage rows that will be added after the next stamp.</summary>
-    public IReadOnlyList<int> PendingGarbage => _pendingGarbage;
+    public IReadOnlyList<int> PendingGarbage => _garbage.PendingHoles;
 
     /// <summary>The piece the next stamp will use.</summary>
-    public int CurrentPiece => _queue[0];
+    public int CurrentPiece => _queue.Current;
 
     /// <summary>
     /// True when the piece that just appeared overlaps blocks, which is how a player dies
@@ -129,7 +125,7 @@ public sealed class PlayerSim
     /// in the bundled demos. The caller then calls <see cref="Die"/>.
     /// </summary>
     public bool SpawnBlocked =>
-        Board.Collides(_queue[0], 0, FallingPiece.SpawnColumn, FallingPiece.SpawnRow);
+        Board.Collides(_queue.Current, 0, FallingPiece.SpawnColumn, FallingPiece.SpawnRow);
 
     /// <summary>
     /// Empties the board, the attack bookkeeping and the pending garbage, and draws a fresh queue.
@@ -143,43 +139,33 @@ public sealed class PlayerSim
         _level = _startLevel;
         _falling.SetGravity(LegacySpeeds.Gravity(_level));
         LinesThisRun = 0;
-        Array.Fill(_queue, -1);
-        Array.Clear(_attacks);
-        LastAttacker = NoAttacker;
-        _pendingGarbage.Clear();
-        while (_queue[0] < 0)
-            Shift();
-        _falling.Spawn(_queue[0]);
+        _garbage.Reset();
+        _queue.Refill();
+        _falling.Spawn(_queue.Current);
         Landed = null;
         _input?.BeginPiece();
     }
 
     /// <summary>Starts the piece sequence over from a seed the host sent for a new round; the next <see cref="Restart"/> draws from it.</summary>
-    public void Reseed(int seed) => _random.SetSeed(seed);
+    public void Reseed(int seed) => _queue.Reseed(seed);
 
     // --- a late joiner takes a board over from the host (Packet_download)
 
-    internal int RandomSeed => _random.Seed;
+    internal int RandomSeed => _queue.Seed;
 
     /// <summary>The piece at <paramref name="index"/> of the queue (0 is the current one), or -1.</summary>
-    internal int QueuedPiece(int index) => _queue[index];
+    internal int QueuedPiece(int index) => _queue.At(index);
 
-    internal IReadOnlyList<int> Attacks => _attacks;
+    internal IReadOnlyList<int> Attacks => _garbage.AttackStrength;
 
     /// <summary>Puts the sim in the state a download describes; the board cells are loaded separately.</summary>
     internal void Restore(int seed, ReadOnlySpan<int> queue, IEnumerable<int> holes, ReadOnlySpan<int> attacks, int lastAttacker)
     {
-        _random.SetSeed(seed);
-        for (int i = 0; i < _queue.Length; i++)
-            _queue[i] = queue[i];
-        for (int i = 0; i < _attacks.Length; i++)
-            _attacks[i] = i < attacks.Length ? attacks[i] : 0;
-        LastAttacker = lastAttacker is >= 0 and < MaxPlayers ? lastAttacker : NoAttacker;
-        _pendingGarbage.Clear();
-        _pendingGarbage.AddRange(holes);
+        _queue.Restore(seed, queue);
+        _garbage.Restore(holes, attacks, lastAttacker);
         Landed = null;
-        if (_queue[0] >= 0)
-            _falling.Spawn(_queue[0]);
+        if (_queue.Current >= 0)
+            _falling.Spawn(_queue.Current);
     }
 
     internal void RestoreCounters(int score, int lines, int deaths)
@@ -256,50 +242,20 @@ public sealed class PlayerSim
     public int Die()
     {
         Deaths++;
-        _pendingGarbage.Clear();
+        _garbage.ClearPending();
         Landed = null;
         return LastAttacker;
     }
 
     /// <summary>
-    /// Queues garbage rows sent by <paramref name="sender"/> (<c>Canvas::add_packet</c>).
-    /// <paramref name="count"/> rows, <paramref name="complexity"/> combo value and
-    /// <paramref name="column"/> (the sender's last block column) decide where the holes go.
+    /// Queues garbage rows sent by <paramref name="sender"/> (<c>Canvas::add_packet</c>); see <see cref="IncomingGarbage.Receive"/>.
     /// </summary>
-    public void ReceiveLines(int sender, int count, int complexity, int column)
-    {
-        if (sender is < 0 or >= MaxPlayers)
-            return;
-
-        _attacks[sender] = Math.Min(255, _attacks[sender] + count * 2);
-        if (LastAttacker == NoAttacker || _attacks[sender] >= _attacks[LastAttacker])
-            LastAttacker = sender;
-
-        if (_pendingGarbage.Count >= MaxPendingGarbage)
-            return;
-        if (count + _pendingGarbage.Count > MaxPendingGarbage)
-            count = MaxPendingGarbage - _pendingGarbage.Count;
-
-        // Unsigned byte arithmetic, as in the C++ code.
-        int nc = (complexity - 1) & 0xFF;
-        int normal = Math.Max(count - nc, 0);
-        int scattered = count - normal;
-        int lx = column & 0xFF;
-
-        for (int n = 0; n < normal; n++)
-            _pendingGarbage.Add(lx);
-        for (int n = 0; n < scattered; n++)
-        {
-            lx = (lx + nc) & 0xFF;
-            while (lx > 13)
-                lx -= 10;
-            _pendingGarbage.Add(lx);
-        }
-    }
+    public void ReceiveLines(int sender, int count, int complexity, int column) =>
+        _garbage.Receive(sender, count, complexity, column);
 
     public StampResult Stamp(int x, int y, int rotation, int dropScore)
     {
-        int piece = _queue[0];
+        int piece = _queue.Current;
         bool valid = Board.IsValidPlacement(piece, rotation, x, y);
         if (!valid)
             InvalidStamps++;
@@ -308,11 +264,8 @@ public sealed class PlayerSim
         Score += dropScore;
         Board.Stamp(piece, rotation, x, y);
         int lastColumn = x + LastCellColumn(piece, rotation);
-        Shift();
-
-        for (int i = 0; i < MaxPlayers; i++)
-            if (_attacks[i] > 0)
-                _attacks[i]--;
+        _queue.Advance();
+        _garbage.WearOff();
 
         // Player_stamp::init stacks three modules, so they run: line check, garbage, line check.
         int before = Score;
@@ -320,13 +273,13 @@ public sealed class PlayerSim
         _falls = _bestCombo = 0;
         var clears = new List<ClearEvent>();
         int lines = ClearLines(clears);
-        if (_pendingGarbage.Count > 0)
+        if (_garbage.PendingHoles.Count > 0)
         {
-            Board.AddGarbage(_pendingGarbage);
-            _pendingGarbage.Clear();
+            Board.AddGarbage(_garbage.PendingHoles);
+            _garbage.ClearPending();
             lines += ClearLines(clears);
         }
-        _falling.Spawn(_queue[0]);
+        _falling.Spawn(_queue.Current);
         Landed = null;
         _input?.BeginPiece();
         return new StampResult(valid, piece, lines, Score - before, _bestCombo, _falls)
@@ -391,13 +344,5 @@ public sealed class PlayerSim
                 if (Pieces.Shapes[piece, rotation, j, i] != 0)
                     column = i;
         return column;
-    }
-
-    private void Shift()
-    {
-        _queue[0] = _queue[1];
-        _queue[1] = _queue[2];
-        _queue[2] = _queue[3];
-        _queue[3] = _random.NextPiece();
     }
 }
