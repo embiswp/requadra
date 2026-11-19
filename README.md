@@ -15,6 +15,7 @@ game is kept untouched in [`legacy/`](legacy/).
 | `tests/Quadra.Tests` | xUnit tests, including replays of the four demos in `legacy/demos`. |
 | `legacy/` | The original C++ game, its art, sounds and the old Perl server. |
 | `doc/` | Notes: the old tech stack, modernisation options and the spike findings. |
+| `.devcontainer/` | VS Code dev container: .NET SDKs, a virtual desktop for the game window, GitHub CLI and the Claude CLI. See its [README](.devcontainer/README.md). |
 
 ## Run
 

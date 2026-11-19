@@ -1,0 +1,46 @@
+{
+  "name": "Quadra (.NET)",
+  "build": { "dockerfile": "Dockerfile" },
+
+  "features": {
+    "ghcr.io/devcontainers/features/dotnet:2": { "version": "11.0", "additionalVersions": "8.0" },
+    "ghcr.io/devcontainers/features/node:1": { "version": "lts" },
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers/features/desktop-lite:1": {},
+    "ghcr.io/anthropics/devcontainer-features/claude-code:1": {}
+  },
+
+  "containerEnv": {
+    "DOTNET_CLI_TELEMETRY_OPTOUT": "1",
+    "DOTNET_NOLOGO": "1",
+    "ALSOFT_DRIVERS": "null"
+  },
+
+  "mounts": [
+    "source=quadra-claude-config,target=/home/vscode/.claude,type=volume"
+  ],
+
+  "forwardPorts": [6080, 5000, 3456],
+  "portsAttributes": {
+    "6080": { "label": "Desktop (noVNC, password: vscode)", "onAutoForward": "notify" },
+    "5000": { "label": "Game list server" },
+    "3456": { "label": "Game host (TCP)" }
+  },
+
+  "postCreateCommand": "sudo chown -R vscode:vscode /home/vscode/.claude && dotnet restore Quadra.slnx",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-dotnettools.csdevkit",
+        "ms-dotnettools.csharp",
+        "anthropic.claude-code",
+        "editorconfig.editorconfig"
+      ],
+      "settings": {
+        "dotnet.defaultSolution": "Quadra.slnx",
+        "files.exclude": { "**/bin": true, "**/obj": true }
+      }
+    }
+  }
+}
