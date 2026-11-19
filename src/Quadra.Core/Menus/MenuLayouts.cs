@@ -153,6 +153,8 @@ public static class MenuLayouts
     public const int LobbyHostX = 40, LobbyHostWidth = 150, LobbyRefreshX = 220, LobbyRefreshWidth = 100;
     public const int LobbyFieldX = 150, LobbyAddressWidth = 250, LobbyServerWidth = 450, LobbyJoinX = 420, LobbyJoinWidth = 60;
 
+    public const int LobbyTeamX = 400, LobbyTeamWidth = 60, LobbyHandicapX = 560, LobbyHandicapWidth = 50;
+
     public static MenuScreen Lobby(int gameCount)
     {
         var items = new List<MenuItem>();
@@ -160,6 +162,8 @@ public static class MenuLayouts
             items.Add(new MenuItem($"game.{i}", LobbyListX, LobbyListY + LobbyRowStep * i, LobbyListWidth, 20));
         items.Add(new MenuItem("host", LobbyHostX, LobbyButtonY, LobbyHostWidth, 22));
         items.Add(new MenuItem("refresh", LobbyRefreshX, LobbyButtonY, LobbyRefreshWidth, 22));
+        items.Add(new MenuItem("team", LobbyTeamX, LobbyButtonY, LobbyTeamWidth, 22));
+        items.Add(new MenuItem("handicap", LobbyHandicapX, LobbyButtonY, LobbyHandicapWidth, 22));
         items.Add(new MenuItem("address", LobbyFieldX, LobbyAddressY, LobbyAddressWidth, 22));
         items.Add(new MenuItem("join", LobbyJoinX, LobbyAddressY, LobbyJoinWidth, 22));
         items.Add(new MenuItem("server", LobbyFieldX, LobbyServerY, LobbyServerWidth, 22));

@@ -12,7 +12,8 @@ if (options is null)
     Console.Error.WriteLine(error);
     Console.Error.WriteLine("""
         Usage: Quadra.Host [--port 3456] [--name "Game name"] [--seed N] [--survivor]
-                           [--max-players 8] [--combo-min N] [--list http://host/cgi-bin/qserv.pl]
+                           [--max-players 8] [--combo-min N]
+                           [--end frags|time|points|lines N] [--list http://host/cgi-bin/qserv.pl]
         """);
     return 1;
 }
@@ -24,6 +25,8 @@ var host = new GameHost(new HostRules
     Survivor = options.Survivor,
     MaxPlayers = options.MaxPlayers,
     ComboMin = (byte)options.ComboMin,
+    GameEnd = options.End,
+    GameEndValue = options.EndValue,
 });
 
 await using var server = new TcpGameServer(host, IPAddress.Any, options.Port);
@@ -70,7 +73,7 @@ if (announcer is not null)
     await announcer.DisposeAsync();
 return 0;
 
-internal sealed record HostOptions(int Port, string Name, int Seed, bool Survivor, int MaxPlayers, int ComboMin, Uri? List)
+internal sealed record HostOptions(int Port, string Name, int Seed, bool Survivor, int MaxPlayers, int ComboMin, Uri? List, GameEnd End = GameEnd.Never, int EndValue = 0)
 {
     public static HostOptions? Parse(string[] args, out string? error)
     {
@@ -78,6 +81,8 @@ internal sealed record HostOptions(int Port, string Name, int Seed, bool Survivo
         string name = "Quadra game";
         bool survivor = false;
         Uri? list = null;
+        var end = GameEnd.Never;
+        int endValue = 0;
         error = null;
 
         for (int i = 0; i < args.Length; i++)
@@ -93,6 +98,14 @@ internal sealed record HostOptions(int Port, string Name, int Seed, bool Survivo
                     case "--survivor": survivor = true; break;
                     case "--max-players": maxPlayers = int.Parse(Value()); break;
                     case "--combo-min": comboMin = int.Parse(Value()); break;
+                    case "--end":
+                        end = Value() switch
+                        {
+                            "frags" => GameEnd.Frag, "time" => GameEnd.Time, "points" => GameEnd.Points, "lines" => GameEnd.Lines,
+                            var other => throw new ArgumentException($"Unknown end condition {other}."),
+                        };
+                        endValue = int.Parse(Value());
+                        break;
                     case "--list": list = new Uri(Value()); break;
                     default: error = $"Unknown option {args[i]}."; return null;
                 }
@@ -104,11 +117,11 @@ internal sealed record HostOptions(int Port, string Name, int Seed, bool Survivo
             }
         }
 
-        if (port is < 0 or > 65535 || maxPlayers is < 1 or > 8 || comboMin is < 0 or > 255)
+        if (port is < 0 or > 65535 || maxPlayers is < 1 or > 8 || comboMin is < 0 or > 255 || endValue < 0)
         {
             error = "A value is out of range.";
             return null;
         }
-        return new HostOptions(port, name, seed, survivor, maxPlayers, comboMin, list);
+        return new HostOptions(port, name, seed, survivor, maxPlayers, comboMin, list, end, endValue);
     }
 }

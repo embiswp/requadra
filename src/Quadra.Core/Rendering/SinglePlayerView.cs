@@ -62,7 +62,7 @@ public sealed class SinglePlayerView
     public void Paint(NetworkGame game)
     {
         var local = game.Player;
-        PaintPlayer(local, null, !game.IsDead && game.Started && !game.Paused, 0, clearStatistics: false);
+        PaintPlayer(local, game.Animation, game.Falling, game.LevelUpFrames, clearStatistics: false);
 
         int shown = 0;
         foreach (var other in game.Others)

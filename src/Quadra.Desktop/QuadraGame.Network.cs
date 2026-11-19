@@ -43,7 +43,11 @@ public sealed partial class QuadraGame
         int port = request.Port;
         if (request.Host)
         {
-            var gameHost = new GameHost(new HostRules { Name = $"{_settings.CurrentPlayer.Name}'s game", Seed = Environment.TickCount });
+            var gameHost = new GameHost(new HostRules
+            {
+                Name = $"{_settings.CurrentPlayer.Name}'s game", Seed = Environment.TickCount,
+                GameEnd = _options.GameEnd, GameEndValue = _options.GameEndValue,
+            });
             try
             {
                 _server = new TcpGameServer(gameHost, IPAddress.Any, port);
@@ -179,12 +183,14 @@ public sealed partial class QuadraGame
         var settings = _settings.CurrentPlayer;
         string name = _options.PlayerName ?? (settings.Name.Length == 0 ? "Player" : settings.Name);
         var used = client.State!.Players.Values.Select(p => (int)p.Team).ToHashSet();
-        byte team = (byte)Enumerable.Range(0, PacketDecoder.MaxTeams).FirstOrDefault(t => !used.Contains(t));
+        byte team = settings.Team >= 0
+            ? (byte)settings.Team
+            : (byte)Enumerable.Range(0, PacketDecoder.MaxTeams).FirstOrDefault(t => !used.Contains(t));
 
         client.PlayerAnswered += OnPlayerAnswered;
         client.RequestPlayer(new PlayerWantJoinPacket
         {
-            Name = name, Team = team, Smooth = settings.Smooth ? 1 : 0, Shadow = settings.Shadow ? 1 : 0,
+            Name = name, Team = team, Handicap = settings.Handicap, Smooth = settings.Smooth ? 1 : 0, Shadow = settings.Shadow ? 1 : 0,
             HRepeat = settings.HorizontalSpeed, VRepeat = settings.VerticalSpeed,
             PlayerHash = MD5.HashData(Encoding.UTF8.GetBytes(name + Environment.MachineName)),
         });
@@ -265,7 +271,7 @@ public sealed partial class QuadraGame
         }
 
         _stage = game.Started ? NetworkStage.Playing : NetworkStage.Waiting;
-        if (game.Player.Level != _networkLevel)
+        if (game.Player.Level != _networkLevel && game.Animation is null)
         {
             _networkLevel = game.Player.Level;
             ShowLevel(_networkLevel);
@@ -283,6 +289,9 @@ public sealed partial class QuadraGame
             {
                 GameEventKind.Rotated => _cues.Rotate(set, e.Column),
                 GameEventKind.Stamped => _cues.Stamp(set, e.Column),
+                GameEventKind.LineFlash => _cues.LineFlash(set, e.Combo),
+                GameEventKind.BlocksFell => _cues.Fall(e.Value, e.Combo),
+                GameEventKind.LevelUp => _cues.LevelUp(),
                 GameEventKind.GameOver => _cues.Death(set),
                 _ => null,
             };
@@ -303,6 +312,8 @@ public sealed partial class QuadraGame
                 (first, second) = ("Enter starts the game", "T to chat");
             else if (!game.Started)
                 first = (game.Countdown / 100 + 1).ToString();
+            else if (game.Ended)
+                (first, second) = ("Game over", game.Result());
             else if (game.IsDead)
                 (first, second) = ("You are dead", game.DeadFrames > NetworkGame.RespawnLockFrames ? "Press a key to return" : null);
             if (first is not null)

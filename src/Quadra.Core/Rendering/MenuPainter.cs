@@ -130,6 +130,11 @@ public sealed class MenuPainter
         _text.Draw(Overlay, "Host a game", MenuLayouts.LobbyHostX, MenuLayouts.LobbyButtonY + 2, focused == "host" ? White : Yellow);
         _text.Draw(Overlay, "Refresh", MenuLayouts.LobbyRefreshX, MenuLayouts.LobbyButtonY + 2, focused == "refresh" ? White : Yellow);
 
+        _text.Draw(Overlay, "Team", MenuLayouts.LobbyTeamX - 50, MenuLayouts.LobbyButtonY + 2, Grey);
+        Panel(MenuLayouts.LobbyTeamX, MenuLayouts.LobbyButtonY, MenuLayouts.LobbyTeamWidth, lobby.ValueText("team"), centered: true, highlighted: focused == "team");
+        _text.Draw(Overlay, "Handicap", MenuLayouts.LobbyHandicapX - 90, MenuLayouts.LobbyButtonY + 2, Grey);
+        Panel(MenuLayouts.LobbyHandicapX, MenuLayouts.LobbyButtonY, MenuLayouts.LobbyHandicapWidth, lobby.ValueText("handicap"), centered: true, highlighted: focused == "handicap");
+
         _text.Draw(Overlay, "Address", MenuLayouts.LobbyHostX, MenuLayouts.LobbyAddressY + 2, Grey);
         Panel(MenuLayouts.LobbyFieldX, MenuLayouts.LobbyAddressY, MenuLayouts.LobbyAddressWidth,
             Caret(lobby.FieldText("address"), caretOn), centered: false, highlighted: focused == "address");

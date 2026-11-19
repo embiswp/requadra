@@ -19,6 +19,12 @@ public sealed record NetworkRequest(bool Host, string Address, int Port);
 /// and the list server's own address, both typed in place. Fetching the list is the front end's job; it
 /// hands the result to <see cref="SetGames"/>.
 /// </summary>
+/// <summary>Numbers the lobby shares with the protocol.</summary>
+internal static class PacketLimits
+{
+    public const int Teams = Net.PacketDecoder.MaxTeams;
+}
+
 public sealed class LobbyModel(GameSettings settings)
 {
     public const int DefaultPort = QservServer.DefaultPort;
@@ -48,6 +54,26 @@ public sealed class LobbyModel(GameSettings settings)
             "server" => ServerUrl + (Edit == LobbyEdit.Server ? "_" : ""),
             _ => "",
         };
+
+    /// <summary>What to show for the team and handicap values.</summary>
+    public string ValueText(string id) => id switch
+    {
+        "team" => settings.CurrentPlayer.Team < 0 ? "auto" : (settings.CurrentPlayer.Team + 1).ToString(CultureInfo.InvariantCulture),
+        "handicap" => settings.CurrentPlayer.Handicap.ToString(CultureInfo.InvariantCulture),
+        _ => FieldText(id),
+    };
+
+    /// <summary>Steps the team (auto, 1 to 8) or the handicap (0 to 4) forwards or backwards, wrapping round.</summary>
+    public void Cycle(string id, int direction)
+    {
+        var player = settings.CurrentPlayer;
+        if (id == "team")
+            player.Team = Wrap(player.Team + 1 + direction, PacketLimits.Teams + 1) - 1;
+        else if (id == "handicap")
+            player.Handicap = Wrap(player.Handicap + direction, PlayerSettings.MaxHandicap + 1);
+    }
+
+    private static int Wrap(int value, int count) => (value % count + count) % count;
 
     public void BeginEdit(string id) => Edit = id switch
     {

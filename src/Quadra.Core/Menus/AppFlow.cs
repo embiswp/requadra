@@ -126,6 +126,8 @@ public sealed class AppFlow
             Setup.Cycle(id, direction);
         else if (Current == Screen.Options && id == "language")
             ActivateOptions(id);
+        else if (Current == Screen.Lobby && id is "team" or "handicap")
+            Lobby.Cycle(id, direction);
     }
 
     /// <summary>Escape: backs out of typing or capturing, then out of the screen; on the main menu it quits.</summary>
@@ -264,6 +266,10 @@ public sealed class AppFlow
                 Lobby.Status = Lobby.ServerUrl.Length > 0 ? "Fetching the game list..." : "No game list server is set";
                 break;
             case "address" or "server": Lobby.BeginEdit(id); break;
+            case "team" or "handicap":
+                Lobby.Cycle(id, 1);
+                _saveSettings();
+                break;
             case "join":
                 _networkRequest = LobbyModel.ParseAddress(Lobby.Address);
                 if (_networkRequest is null)

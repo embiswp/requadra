@@ -53,7 +53,7 @@ public sealed class MultiplayerState(GameServerPacket rules)
         {
             case PlayerPacket p:
                 _players[p.Pos] = new RemotePlayer(p.Pos, p.Name, p.Team, p.Handicap,
-                    new PlayerSim(Rules.GameSeed, Rules.LevelStart, p.VRepeat), p.PlayerId, playerHash);
+                    new PlayerSim(Rules.GameSeed, Rules.LevelStart, p.VRepeat, levelUp: !Rules.NoLevelUp), p.PlayerId, playerHash);
                 break;
             case MovesPacket m when PlayMoves && _players.TryGetValue(m.Slot, out var p):
                 foreach (byte frame in m.Moves)

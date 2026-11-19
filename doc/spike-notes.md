@@ -494,12 +494,35 @@ at the top of the board. Chat goes through the host to everyone, the sender incl
 Checked: tests of the chat path and two windows (the other player's message and the player list on screen).
 The team and handicap are not chosen yet: a joining player takes the first free team and handicap 0.
 
+### Level-up, clear animation, team choice and game end (eleventh step)
+
+- **Level-up:** `MultiplayerState` builds players with level-up on unless the host's rules say otherwise
+  (`level_up = !nolevel_up`); the four demos still replay identically. The local board shows the rising banner.
+- **Clear animation:** the frame-by-frame builder moved out of `SinglePlayerGame` into `ClearAnimation` and the
+  network loop plays it after every landing, with the same sounds. Remote boards do not animate, and garbage is
+  still sent when a stamp arrives, not when the attacker's clear animation would end on the victim's machine.
+  That timing, which I believe explains the differing demo01/03 totals, is not modelled.
+- **Team and handicap:** chosen on the lobby screen (team auto or 1 to 8, handicap 0 to 4), saved per player profile.
+- **Game end** (`GameHost.CheckEnd`, `GameGoals`): the host ends the game as `Net_list::check_end_game` does:
+  frags, points (the wire value is in thousands) or lines, summed per team over the players it has now, or time
+  (the wire value is minutes, counted in 10 ms frames from the start). If the two best teams are level the game goes
+  on until one is ahead. The host then sends `EndGame` to everyone and ignores stamps, deaths and garbage that
+  are still on their way; clients stop playing and show who won. Set with `--end frags|time|points|lines N` on
+  `Quadra.Host` and on the window that hosts. No menu for it yet. Tested in `GameEndTests`.
+- **Remote falling pieces:** not needed. The original host only relays `Moves` to spectators (and records
+  them for demos); other players see a board change only when a piece is stamped. Sending `ClientMoves` when
+  the host's `WantsMoves` is set would be needed for host-side demo recording and spectators.
+
+Not run: a final two-window smoke test of the animation, because the desktop client would not open a window in
+the session at that point (a plain single-player smoke run hung the same way), so only the unit tests cover this
+last round; the animation itself is the single-player code, which was checked on screen earlier.
+
 ## Suggested next steps
 
 1. Play the client and tune the feel: sound balance, speed per level, key timing, menu use.
-2. The rest of the network game on screen: team and handicap choice in the waiting room,
-   the clear animation (which also fixes the garbage order above), remote falling
-   pieces (needs the client to send `Moves`), level-up. Then round management on the host.
+2. Round management on the host: survivor rounds (first frag, waiting for the winner, restart,
+   `ServerState`), rejoining, lag and idle limits, admin commands; a menu for the game's rules (end condition,
+   survivor, combo minimum); timing the garbage like the original (attacks when the attacker's clear animation ends).
 3. Try the host and client against the C++ game to see whether they talk to each other.
 4. Late join (`Download`) and the rest of the list under "not done".
 5. Smaller gaps: the 5-minute sprint game, high score playback and posting to the shared table, the demo

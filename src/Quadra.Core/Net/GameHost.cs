@@ -96,6 +96,15 @@ public sealed class GameHost
 
     public bool Started => DelayStart == 0;
 
+    /// <summary>Frames played since the countdown ended (time-limited games count against this).</summary>
+    public int Frames { get; private set; }
+
+    /// <summary>The end condition has been met and everyone has been told; play no longer counts.</summary>
+    public bool Terminated { get; private set; }
+
+    /// <summary>The team that won, or -1 when nobody scored.</summary>
+    public int WinningTeam { get; private set; } = -1;
+
     public int PeerCount
     {
         get
@@ -117,6 +126,7 @@ public sealed class GameHost
                 Addresses = [.. addresses ?? []],
                 Port = port,
                 Started = Started,
+                Terminated = Terminated,
                 Survivor = Rules.Survivor,
                 RulesType = Rules.Survivor ? 1 : 0,
                 LevelStart = Rules.LevelStart,
@@ -162,7 +172,35 @@ public sealed class GameHost
         {
             if (DelayStart is > 0 and not WaitingForStart && --DelayStart == 0)
                 Paused = false;
+            if (Started && !Paused && !Terminated)
+            {
+                Frames++;
+                CheckEnd();
+            }
         }
+    }
+
+    /// <summary>
+    /// Ends the game when its condition is met (<c>Net_list::check_end_game</c>): the leading team has the
+    /// goal or the time is up. If the two best teams are level, play goes on until one is ahead.
+    /// </summary>
+    private void CheckEnd()
+    {
+        var end = Rules.GameEnd;
+        if (end == GameEnd.Never || (end == GameEnd.Frag && Rules.GameEndValue <= 0))
+            return;
+
+        var totals = GameGoals.TeamTotals(State, end);
+        int leader = GameGoals.Leader(totals, out bool draw);
+        bool reached = end == GameEnd.Time
+            ? Frames >= Rules.GameEndValue * GameGoals.FramesPerMinute
+            : leader >= 0 && totals[leader] >= GameGoals.Goal(end, Rules.GameEndValue);
+        if (!reached || draw)
+            return;
+
+        Terminated = true;
+        WinningTeam = leader;
+        Dispatch(new EndGamePacket(true) { Id = (byte)PacketType.EndGame }, except: null, everyone: true);
     }
 
     public void Receive(HostPeer peer, Packet packet)
@@ -200,6 +238,11 @@ public sealed class GameHost
                     if (Owns(peer, packet) && packet is DropPlayerPacket drop)
                         Drop(drop.Slot, drop.Reason, except: peer);
                     break;
+                case PacketType.ClientStampBlock when Terminated:
+                case PacketType.ClientDead when Terminated:
+                case PacketType.ClientRespawn when Terminated:
+                case PacketType.ClientLines when Terminated:
+                    break;      // the game is over: whatever is still on its way no longer counts
                 case PacketType.ClientStampBlock:
                 case PacketType.ClientDead:
                 case PacketType.ClientRespawn:

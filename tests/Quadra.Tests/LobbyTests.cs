@@ -132,4 +132,25 @@ public class LobbyTests
         flow.Lobby.Backspace();
         Assert.Equal("a", flow.Lobby.Address);
     }
+
+    [Fact]
+    public void Team_and_handicap_step_through_their_values_and_wrap_round()
+    {
+        var flow = MenuFixtures.NewFlow();
+        flow.Show(Screen.Lobby);
+        Assert.Equal("auto", flow.Lobby.ValueText("team"));
+        Assert.Equal("0", flow.Lobby.ValueText("handicap"));
+
+        flow.Activate("team");
+        Assert.Equal("1", flow.Lobby.ValueText("team"));
+        flow.Cycle("team", -1);
+        flow.Cycle("team", -1);
+        Assert.Equal("8", flow.Lobby.ValueText("team"));      // before auto comes the last team
+        Assert.Equal(7, flow.Settings.CurrentPlayer.Team);
+
+        flow.Cycle("handicap", -1);
+        Assert.Equal("4", flow.Lobby.ValueText("handicap"));
+        flow.Activate("handicap");
+        Assert.Equal("0", flow.Lobby.ValueText("handicap"));
+    }
 }

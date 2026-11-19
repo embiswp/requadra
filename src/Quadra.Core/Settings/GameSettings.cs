@@ -34,6 +34,14 @@ public sealed class PlayerSettings
     /// <summary>Keep dropping a new piece while the down key is still held.</summary>
     public bool ContinuousDown { get; set; } = true;
 
+    /// <summary>Team to join a network game in, 0 to 7, or -1 to take the first one nobody is in.</summary>
+    public int Team { get; set; } = -1;
+
+    /// <summary>Handicap in a network game, 0 (none) to 4: more blocks received, fewer sent.</summary>
+    public int Handicap { get; set; }
+
+    public const int MaxHandicap = 4;
+
     public Dictionary<GameAction, string> Keys { get; set; } = DefaultKeys();
 
     public static Dictionary<GameAction, string> DefaultKeys() => new()
@@ -56,6 +64,8 @@ public sealed class PlayerSettings
         if (Name.Length == 0)
             Name = $"#{index + 1}";
         Password ??= "";
+        Team = Math.Clamp(Team, -1, 7);
+        Handicap = Math.Clamp(Handicap, 0, MaxHandicap);
         HorizontalSpeed = Math.Clamp(HorizontalSpeed, 0, SpeedLevels - 1);
         VerticalSpeed = Math.Clamp(VerticalSpeed, 0, SpeedLevels - 1);
         var keys = DefaultKeys();

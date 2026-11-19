@@ -37,6 +37,9 @@ public sealed class GameClient
     public bool Paused { get; private set; } = true;
     public bool Started => DelayStart == 0;
 
+    /// <summary>The host has ended the game: its end condition was met.</summary>
+    public bool Terminated { get; private set; }
+
     /// <summary>Raised for every packet after it has been applied.</summary>
     public event Action<Packet>? Received;
 
@@ -121,6 +124,10 @@ public sealed class GameClient
                     DelayStart = GameHost.WaitingForStart - 1;   // the countdown begins; it stays paused until it ends
                 else if (Started)
                     Paused = !Paused;
+                break;
+
+            case EndGamePacket:
+                Terminated = true;
                 break;
 
             case DropPlayerPacket drop:

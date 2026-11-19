@@ -48,6 +48,12 @@ public sealed record StartupOptions
     /// <summary>Name to play under in a network game instead of the player's own.</summary>
     public string? PlayerName { get; init; }
 
+    /// <summary>End condition of a game hosted from this window: <c>--end frags|time|points|lines N</c>.</summary>
+    public Quadra.Core.Net.GameEnd GameEnd { get; init; }
+
+    /// <summary>Frags, minutes, thousands of points or lines.</summary>
+    public int GameEndValue { get; init; }
+
     public static StartupOptions Parse(string[] args)
     {
         string? Value(string name) =>
@@ -72,6 +78,15 @@ public sealed record StartupOptions
             Host = args.Contains("--host") ? Value("--host") is { } port && int.TryParse(port, out _) ? port : "" : null,
             Join = Value("--join"),
             PlayerName = Value("--name"),
+            GameEnd = Value("--end") switch
+            {
+                "frags" => Quadra.Core.Net.GameEnd.Frag,
+                "time" => Quadra.Core.Net.GameEnd.Time,
+                "points" => Quadra.Core.Net.GameEnd.Points,
+                "lines" => Quadra.Core.Net.GameEnd.Lines,
+                _ => Quadra.Core.Net.GameEnd.Never,
+            },
+            GameEndValue = int.TryParse(Array.IndexOf(args, "--end") is var e and >= 0 && e + 2 < args.Length ? args[e + 2] : null, out int endValue) ? endValue : 0,
             Language = int.TryParse(Value("--lang"), out int lang) ? lang : null,
         };
     }

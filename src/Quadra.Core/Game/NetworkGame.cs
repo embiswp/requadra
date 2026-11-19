@@ -9,13 +9,16 @@ namespace Quadra.Core.Game;
 /// board, but for the local player's slot of a <see cref="GameClient"/>. Landings, deaths and respawns
 /// go out through the client; what the other machines do arrives through it and changes the boards.
 /// <para>
-/// A front end feeds <see cref="Keys"/> and calls <see cref="Update"/> every 10 ms. Line clears are not
-/// animated yet: a landing is followed at once by the pause before the next piece.
+/// A front end feeds <see cref="Keys"/> and calls <see cref="Update"/> every 10 ms. After a landing the
+/// local board plays the same clear animation as a single-player game (<see cref="Animation"/>) before the
+/// next piece comes.
 /// </para>
 /// </summary>
 public sealed class NetworkGame
 {
     private readonly GameClient _client;
+    private readonly List<AnimationFrame> _timeline = [];
+    private int _timelineIndex;
     private int _pauseFramesLeft;
     private bool _wasStarted;
 
@@ -31,6 +34,7 @@ public sealed class NetworkGame
         Keys = keys;
         Bindings = bindings;
         Player.AttachInput(keys, bindings, horizontalRepeat, continuousDown);
+        Player.RecordClearAnimation = true;
         client.Received += packet =>
         {
             if (packet is ChatPacket chat)
@@ -63,6 +67,15 @@ public sealed class NetworkGame
 
     public PlayerSim Player => Local.Sim;
 
+    /// <summary>The look of the local board during a line clear, or null when the live board should be drawn.</summary>
+    public AnimationFrame? Animation => _timelineIndex < _timeline.Count ? _timeline[_timelineIndex] : null;
+
+    /// <summary>True while a piece is in play (not during a clear, its pause, a death or before the start).</summary>
+    public bool Falling => Started && !Paused && !Ended && !IsDead && _timelineIndex >= _timeline.Count && _pauseFramesLeft == 0;
+
+    /// <summary>Frames left of the rising "level up" banner.</summary>
+    public int LevelUpFrames { get; private set; }
+
     /// <summary>Frames the local player has been dead; 0 while alive.</summary>
     public int DeadFrames => _deadFrames;
 
@@ -72,6 +85,20 @@ public sealed class NetworkGame
     public bool Started => _client.Started;
 
     public bool Paused => _client.Paused;
+
+    /// <summary>The host ended the game: its end condition was met.</summary>
+    public bool Ended => _client.Terminated;
+
+    /// <summary>Who won, once <see cref="Ended"/>: "Team 2 (Bob) wins", "No winner" or "Drawn".</summary>
+    public string Result()
+    {
+        var totals = GameGoals.TeamTotals(State, State.Rules.GameEnd);
+        int team = GameGoals.Leader(totals, out bool draw);
+        if (team < 0)
+            return "No winner";
+        var names = string.Join(", ", State.Players.Values.Where(p => p.Team == team).Select(p => p.Name));
+        return draw ? "Drawn" : $"Team {team + 1} ({names}) wins";
+    }
 
     /// <summary>Frames left of the countdown, or 0 once the game runs.</summary>
     public int Countdown => _client.DelayStart;
@@ -85,7 +112,7 @@ public sealed class NetworkGame
         _client.Pump();
         _client.Tick();
 
-        if (!Started || Paused)
+        if (!Started || Paused || Ended)
             return;
         _wasStarted = true;
 
@@ -97,6 +124,16 @@ public sealed class NetworkGame
             return;
         }
 
+        if (LevelUpFrames > 0)
+            LevelUpFrames--;
+
+        if (_timelineIndex < _timeline.Count)
+        {
+            _timelineIndex++;
+            if (_timelineIndex < _timeline.Count)
+                Emit(_timeline[_timelineIndex]);
+            return;
+        }
         if (_pauseFramesLeft > 0)
         {
             _pauseFramesLeft--;
@@ -111,6 +148,7 @@ public sealed class NetworkGame
             return;
 
         int drop = LegacyScoring.DropPoints(Player.Falling.Frames);
+        int levelBefore = Player.Level;
         Events.Add(new GameEvent(GameEventKind.Stamped, landed.X));
         _client.Stamp(Slot, landed.X, landed.Y, landed.Rotation, drop, Player.Falling.Frames);
 
@@ -122,7 +160,23 @@ public sealed class NetworkGame
             _deadFrames = 0;
             return;
         }
+        _timeline.Clear();
+        _timeline.AddRange(ClearAnimation.Build(Player.LastClear, Player.Level > levelBefore ? Player.Level : 0));
+        _timelineIndex = 0;
         _pauseFramesLeft = SinglePlayerGame.PauseFrames;
+        if (_timeline.Count > 0)
+            Emit(_timeline[0]);
+    }
+
+    /// <summary>Reports the events that belong to a frame that has just come on screen.</summary>
+    private void Emit(AnimationFrame frame)
+    {
+        foreach (var e in frame.Events)
+        {
+            Events.Add(e);
+            if (e.Kind == GameEventKind.LevelUp)
+                LevelUpFrames = SinglePlayerGame.LevelUpBannerFrames;
+        }
     }
 
     private bool AnyKeyDown() =>
@@ -134,6 +188,7 @@ public sealed class NetworkGame
         IsDead = false;
         _deadFrames = 0;
         _pauseFramesLeft = 0;
+        _timeline.Clear();
         Player.Input?.BeginPiece();
     }
 
