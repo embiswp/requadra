@@ -1,5 +1,7 @@
 # Quadra (.NET)
 
+[![CI](https://github.com/embiswp/requadra/actions/workflows/ci.yml/badge.svg)](https://github.com/embiswp/requadra/actions/workflows/ci.yml)
+
 A work-in-progress port of the multiplayer falling-block game Quadra to C# and .NET. The original C++
 game is kept untouched in [`legacy/`](legacy/).
 

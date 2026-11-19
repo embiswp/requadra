@@ -1,0 +1,126 @@
+name: CI
+
+on:
+  push:
+    branches: [master, spike]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: "1"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
+
+jobs:
+  # Builds the whole solution (including the desktop app and the server) and runs the tests.
+  test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The libraries and apps target net8.0; the tests target net11.0.
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            11.0.x
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Restore
+        run: dotnet restore Quadra.slnx
+
+      - name: Build the desktop app
+        run: dotnet build src/Quadra.Desktop -c Release --no-restore
+
+      - name: Build the server app
+        run: dotnet build src/Quadra.Server -c Release --no-restore
+
+      - name: Build everything else
+        run: dotnet build Quadra.slnx -c Release --no-restore
+
+      - name: Test
+        run: dotnet test Quadra.slnx -c Release --no-build --logger "trx;LogFileName=test-results.trx" --results-directory TestResults
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: TestResults
+          if-no-files-found: ignore
+
+  # The desktop app is built on each system it runs on, and published as a self-contained program.
+  desktop:
+    name: Desktop app (${{ matrix.rid }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, rid: linux-x64 }
+          - { os: windows-latest, rid: win-x64 }
+          - { os: macos-latest, rid: osx-arm64 }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            11.0.x
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Publish
+        run: dotnet publish src/Quadra.Desktop -c Release -r ${{ matrix.rid }} --self-contained -o publish
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: quadra-desktop-${{ matrix.rid }}
+          path: publish
+          retention-days: 14
+
+  # The game list server, published for any system with the .NET 8 ASP.NET Core runtime (or newer).
+  server:
+    name: Server app
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            11.0.x
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Publish
+        run: dotnet publish src/Quadra.Server -c Release -o publish
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: quadra-server
+          path: publish
+          retention-days: 14
