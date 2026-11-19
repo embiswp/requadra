@@ -75,6 +75,13 @@ public sealed class Board : IBoardView
             }
     }
 
+    /// <summary>Sets one playfield cell as it was sent to a late joiner.</summary>
+    internal void Load(int row, int column, byte cell, bool occupied)
+    {
+        _cell[row, column] = cell;
+        _occupied[row, column] = occupied;
+    }
+
     /// <summary>Occupies one cell without a piece (used by tests to set up positions).</summary>
     internal void Fill(int row, int column)
     {

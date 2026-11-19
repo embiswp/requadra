@@ -49,8 +49,9 @@ public sealed record HostRules
 /// that a client only acts for its own players. It keeps its own copy of every board
 /// (<see cref="State"/>) by applying what it relays, as every client does.
 /// <para>
-/// Like the original it is the one place players are admitted, but a player joins only before the game
-/// starts: the original sends a late joiner every board as it stands, which this port does not yet.
+/// Like the original it is the one place players are admitted, and it lets them in while the game is on: a
+/// connection that joins then is sent every board as it stands (<see cref="DownloadPacket"/> and
+/// <see cref="StatPacket"/>), and the new player starts with an empty board.
 /// </para>
 /// All calls are serialised by one lock, so connections can call in from their own threads.
 /// </summary>
@@ -378,10 +379,10 @@ public sealed class GameHost
 
     private void WantJoin(HostPeer peer, WantJoinPacket want)
     {
-        // 1.1.0 clients are ignored, and nobody can come in once the game has begun.
+        // 1.1.0 clients are ignored, and nobody can come in once the game is over.
         if (!want.Current || peer.Joined)
             return;
-        if (Started)
+        if (Terminated)
         {
             Close(peer);
             return;
@@ -408,6 +409,15 @@ public sealed class GameHost
             SyncPoint = SyncPointNone,
             AllowHandicap = Rules.AllowHandicap,
         });
+
+        // Whoever comes in while the game is on is told how every board stands (the original does this on a join).
+        if (Started)
+            foreach (var player in State.Players.Values)
+            {
+                var (board, stats) = State.Snapshot(player);
+                Send(peer, board);
+                Send(peer, stats);
+            }
     }
 
     private void PlayerWantJoin(HostPeer peer, PlayerWantJoinPacket want)
@@ -421,7 +431,7 @@ public sealed class GameHost
 
         if (State.Players.Values.Any(p => p.Name == want.Name && p.PlayerHash.AsSpan().SequenceEqual(want.PlayerHash)))
             answer = answer with { Accepted = JoinAnswer.NameTaken };
-        else if (Started)
+        else if (Terminated)
             answer = answer with { Accepted = JoinAnswer.GameFinished };
         else if (State.Players.Count >= Math.Min(Rules.MaxPlayers, PacketDecoder.MaxPlayers))
             answer = answer with { Accepted = JoinAnswer.Full };

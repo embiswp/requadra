@@ -445,8 +445,7 @@ timed replay still does not match the recording (see there).
 
 What is not done:
 
-- A player can only join before the game starts. The original sends a late joiner every board as it stands
-  (`Download`); that needs a way to restore a `PlayerSim` and is not built. Such a connection is closed.
+- Late join was not built at this step; it is now (see the fourteenth step).
 - Round management: survivor rounds (first frag, waiting for winner, restart, `ServerState`), the game end
   conditions (frags, time, points, lines), `EndGame`, game and player statistics packets, rejoining after
   being dropped, the lag and idle limits, the admin commands, spectators (`Moves` relaying).
@@ -533,7 +532,7 @@ last round; the animation itself is the single-player code, which was checked on
   restarts a player in a survivor game. The window shows "Waiting for the next round". `--survivor` on
   `Quadra.Host` and on the hosting window turns it on. Tested in `SurvivorRoundTests` (in-process, host and two players).
 - **Not done:** the winner's board fill ("first frag" animation), round wins in the stats, a player who leaves
-  mid-round is simply dropped (the original keeps them as gone), idle players, and a late joiner.
+  mid-round is simply dropped (the original keeps them as gone), and idle players.
 
 - **Rules menu:** the lobby has a row for the rules "Host a game" starts with: survivor on/off, end condition
   (never, frags, minutes, thousands of points, lines), its value, and the minimum combo (0 to 4). Left and right
@@ -555,13 +554,28 @@ last round; the animation itself is the single-player code, which was checked on
   different order depends on each machine's lag, which headless clients do not have. The untimed replays
   (every machine agrees; demo00 and demo02 exact) are unchanged.
 
+### Late join (fourteenth step)
+
+- The host now admits connections and players while a game is on (only a finished game turns them away). A
+  connection that joins a started game is sent, after the game packet, a `Download` and a `Stat` for every
+  player: the board with its colours, the seed of the piece sequence, the current and three next pieces, the
+  waiting garbage, who attacked, whether the player is alive and their round state, and the frag, death,
+  line and score counters (`MultiplayerState.Snapshot`; the client applies them as it does any packet). Wire
+  formats follow `Packet_download` and `Packet_stat` for net version 20. The new player appears everywhere with
+  an empty board and plays at once, including in survivor games (in net version 23 the original makes them wait).
+- Not carried over: the colour and blind time of waiting garbage rows (blind attacks are not played), the level,
+  and the piece and clear counters of the stats. A board cell that is occupied but has no colour would come
+  through as a plain colour.
+- Tested in `LateJoinTests`: both packets round-trip, and a client that joins after 60 stamps of demo00 has the
+  same boards, queue, garbage, counters and alive flags as the host. Not tried against the C++ client.
+
 ## Suggested next steps
 
 1. Play the client and tune the feel: sound balance, speed per level, key timing, menu use.
 2. More round management on the host: rejoining, lag and idle limits, admin commands; a menu for the game's rules (end condition,
    survivor, combo minimum).
 3. Try the host and client against the C++ game to see whether they talk to each other.
-4. Late join (`Download`) and the rest of the list under "not done".
+4. The rest of the list under "not done".
 5. Smaller gaps: the 5-minute sprint game, high score playback and posting to the shared table, the demo
    screen.
 6. Android and iOS planning remains a separate task. Touch controls map naturally onto the key-state layer

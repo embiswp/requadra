@@ -126,6 +126,45 @@ public sealed record MovesPacket(byte[] Moves) : PlayerPacketBase;
 
 public sealed record StatePacket(byte State) : PlayerPacketBase;
 
+/// <summary>One counter of a <see cref="StatPacket"/> (<c>CS::Stat_type</c>).</summary>
+public readonly record struct StatValue(byte Stat, int Value)
+{
+    public const byte Death = 23, Frag = 24, LinesTotal = 25, Score = 26;
+}
+
+/// <summary>A player's counters, as the host sends them to a connection that joins late.</summary>
+public sealed record StatPacket(IReadOnlyList<StatValue> Stats) : PlayerPacketBase;
+
+/// <summary>A garbage row waiting to come in, as the late-join packet carries it.</summary>
+public readonly record struct DownloadedGarbage(byte X, byte Color, byte BlindTime, ushort HolePos, bool Final);
+
+/// <summary>
+/// A player's whole board as it stands, sent to a connection that joins a game that has begun
+/// (<c>Packet_download</c>). <see cref="Cells"/> and <see cref="Blinded"/> are 32 rows of 10 columns.
+/// </summary>
+public sealed record DownloadPacket : PlayerPacketBase
+{
+    public const int Rows = 32, Columns = 10, NoPiece = 255;
+
+    public byte[] Cells { get; init; } = new byte[Rows * Columns];
+    public int Seed { get; init; }
+
+    /// <summary>0 busy, 1 playing, 2 dead and waiting, 3 gone.</summary>
+    public byte Idle { get; init; } = 1;
+
+    /// <summary>A <see cref="Game.RoundState"/>.</summary>
+    public byte State { get; init; }
+
+    public byte Bloc { get; init; } = NoPiece;
+    public byte Next { get; init; } = NoPiece;
+    public byte Next2 { get; init; } = NoPiece;
+    public byte Next3 { get; init; } = NoPiece;
+    public IReadOnlyList<DownloadedGarbage> Garbage { get; init; } = [];
+    public byte[] Attacks { get; init; } = new byte[PacketDecoder.MaxPlayers];
+    public byte LastAttacker { get; init; } = NoPiece;
+    public byte[] Blinded { get; init; } = new byte[Rows * Columns];
+}
+
 public sealed record EndGamePacket(bool AutoEnd) : Packet;
 
 public sealed record ServerRandomPacket(uint Seed) : Packet;

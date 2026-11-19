@@ -157,6 +157,38 @@ public sealed class PlayerSim
     /// <summary>Starts the piece sequence over from a seed the host sent for a new round; the next <see cref="Restart"/> draws from it.</summary>
     public void Reseed(int seed) => _random.SetSeed(seed);
 
+    // --- a late joiner takes a board over from the host (Packet_download)
+
+    internal int RandomSeed => _random.Seed;
+
+    /// <summary>The piece at <paramref name="index"/> of the queue (0 is the current one), or -1.</summary>
+    internal int QueuedPiece(int index) => _queue[index];
+
+    internal IReadOnlyList<int> Attacks => _attacks;
+
+    /// <summary>Puts the sim in the state a download describes; the board cells are loaded separately.</summary>
+    internal void Restore(int seed, ReadOnlySpan<int> queue, IEnumerable<int> holes, ReadOnlySpan<int> attacks, int lastAttacker)
+    {
+        _random.SetSeed(seed);
+        for (int i = 0; i < _queue.Length; i++)
+            _queue[i] = queue[i];
+        for (int i = 0; i < _attacks.Length; i++)
+            _attacks[i] = i < attacks.Length ? attacks[i] : 0;
+        LastAttacker = lastAttacker is >= 0 and < MaxPlayers ? lastAttacker : NoAttacker;
+        _pendingGarbage.Clear();
+        _pendingGarbage.AddRange(holes);
+        Landed = null;
+        if (_queue[0] >= 0)
+            _falling.Spawn(_queue[0]);
+    }
+
+    internal void RestoreCounters(int score, int lines, int deaths)
+    {
+        Score = score;
+        Lines = lines;
+        Deaths = deaths;
+    }
+
     /// <summary>The key-to-action layer, if <see cref="AttachInput"/> was called.</summary>
     public PieceController? Input => _input;
 

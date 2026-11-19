@@ -31,6 +31,8 @@ public static class PacketDecoder
             PacketType.Lines or PacketType.ClientLines => ReadLines(r),
             PacketType.Moves or PacketType.ClientMoves => ReadPlayerBase(r, s => ReadMoves(r, s)),
             PacketType.State or PacketType.ClientState or PacketType.ServerState => ReadPlayerBase(r, s => new StatePacket(r.ReadByte()) { Slot = s }),
+            PacketType.Stat => ReadPlayerBase(r, s => ReadStat(r, s)),
+            PacketType.Download => ReadPlayerBase(r, s => ReadDownload(r, s)),
             PacketType.WantJoin => ReadWantJoin(r),
             PacketType.PlayerWantJoin => ReadPlayerWantJoin(r),
             PacketType.PlayerAccepted => new PlayerAcceptedPacket { Uid = r.ReadDword(), Pos = r.ReadByte(), Accepted = (JoinAnswer)r.ReadByte() },
@@ -198,6 +200,54 @@ public static class PacketDecoder
         {
             Uid = uid, Team = team, Name = name, Player = player, HRepeat = hRepeat, VRepeat = vRepeat,
             Smooth = smooth, Shadow = shadow, Pos = pos, Handicap = handicap, PlayerId = playerId,
+        };
+    }
+
+    private static StatPacket ReadStat(NetReader r, byte slot)
+    {
+        int count = r.ReadByte();
+        var stats = new List<StatValue>(count);
+        for (int i = 0; i < count; i++)
+        {
+            byte stat = r.ReadByte();
+            stats.Add(new StatValue(stat, r.ReadInt()));
+        }
+        return new StatPacket(stats) { Slot = slot };
+    }
+
+    private static DownloadPacket ReadDownload(NetReader r, byte slot)
+    {
+        const int size = DownloadPacket.Rows * DownloadPacket.Columns;
+        var cells = r.ReadBytes(size);
+        for (int i = 0; i < size; i++)
+            cells[i] &= 0x7F;
+        int seed = r.ReadInt();
+        byte idle = r.ReadByte(), state = r.ReadByte();
+        byte bloc = r.ReadByte(), next = r.ReadByte(), next2 = r.ReadByte(), next3 = r.ReadByte();
+        int bonus = r.ReadByte();
+        if (idle > 3 || state > 3 || bonus > 20 || (bloc > 6 && bloc != DownloadPacket.NoPiece))
+            throw new InvalidDataException("A download packet has a value out of range.");
+        var x = new byte[20];
+        var color = new byte[20];
+        for (int i = 0; i < 20; i++)
+        {
+            x[i] = r.ReadByte();
+            color[i] = r.ReadByte();
+        }
+        var attacks = r.ReadBytes(MaxPlayers);
+        byte lastAttacker = r.ReadByte();
+        var blinded = r.ReadBytes(size);
+        var blind = r.ReadBytes(20);
+        var garbage = new List<DownloadedGarbage>(bonus);
+        for (int i = 0; i < bonus; i++)
+        {
+            ushort hole = r.ReadWord();
+            garbage.Add(new DownloadedGarbage(x[i], color[i], blind[i], (ushort)(hole & 0x3FF), (hole & 0x8000) != 0));
+        }
+        return new DownloadPacket
+        {
+            Slot = slot, Cells = cells, Seed = seed, Idle = idle, State = state, Bloc = bloc, Next = next, Next2 = next2, Next3 = next3,
+            Garbage = garbage, Attacks = attacks, LastAttacker = lastAttacker, Blinded = blinded,
         };
     }
 

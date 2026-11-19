@@ -126,7 +126,7 @@ public class PacketEncoderTests
     [Fact]
     public void An_unknown_packet_is_written_as_it_was_read()
     {
-        var raw = new byte[] { (byte)PacketType.Stat, 9, 8, 7 };
+        var raw = new byte[] { (byte)PacketType.GameStat, 9, 8, 7 };
 
         Assert.Equal(raw, PacketEncoder.Encode(PacketDecoder.Decode(raw)));
     }

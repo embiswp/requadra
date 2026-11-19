@@ -240,8 +240,10 @@ public class GameHostTests
         Assert.Empty(sb.Of<TestPingPacket>());
     }
 
+    private static byte sa_slot(GameHost host) => host.State.Players.Keys.Single();
+
     [Fact]
-    public void Starting_runs_a_countdown_and_then_the_game_is_on_and_closed_to_newcomers()
+    public void Starting_runs_a_countdown_and_then_the_game_is_on_and_a_newcomer_is_told_how_the_boards_stand()
     {
         var host = new GameHost(Rules);
         var (a, sa) = Join(host);
@@ -264,8 +266,10 @@ public class GameHostTests
         var late = new TestSink();
         var peer = host.Connect(late);
         host.Receive(peer, new WantJoinPacket { Id = (byte)PacketType.WantJoin, Uid = 3, NetVersion = 20 });
-        Assert.True(late.Closed);
-        Assert.Empty(late.Of<GameServerPacket>());
+        Assert.False(late.Closed);
+        Assert.True(Assert.Single(late.Of<GameServerPacket>()).Accepted);
+        Assert.Equal(sa_slot(host), Assert.Single(late.Of<DownloadPacket>()).Slot);
+        Assert.Equal(sa_slot(host), Assert.Single(late.Of<StatPacket>()).Slot);
     }
 
     [Fact]

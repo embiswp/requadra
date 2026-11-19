@@ -61,6 +61,18 @@ public static class PacketEncoder
                 w.WriteByte((byte)p.Moves.Length);
                 w.WriteBytes(p.Moves);
                 break;
+            case StatPacket p:
+                w.WriteByte(p.Slot);
+                w.WriteByte((byte)p.Stats.Count);
+                foreach (var s in p.Stats)
+                {
+                    w.WriteByte(s.Stat);
+                    w.WriteInt(s.Value);
+                }
+                break;
+            case DownloadPacket p:
+                WriteDownload(w, p, netVersion);
+                break;
             case StatePacket p:
                 w.WriteByte(p.Slot);
                 w.WriteByte(p.State);
@@ -107,6 +119,38 @@ public static class PacketEncoder
     {
         w.WriteByte((byte)a.Type);
         w.WriteInt(a.Param);
+    }
+
+    private static void WriteDownload(NetWriter w, DownloadPacket p, int netVersion)
+    {
+        w.WriteByte(p.Slot);
+        var cells = (byte[])p.Cells.Clone();
+        if (netVersion >= 23)
+            for (int i = 0; i < cells.Length; i++)
+                if (cells[i] != 0)
+                    cells[i] |= 0x80;
+        w.WriteBytes(cells);
+        w.WriteInt(p.Seed);
+        w.WriteByte(p.Idle);
+        w.WriteByte(p.State);
+        w.WriteByte(p.Bloc);
+        w.WriteByte(p.Next);
+        w.WriteByte(p.Next2);
+        w.WriteByte(p.Next3);
+        int bonus = Math.Min(p.Garbage.Count, 20);
+        w.WriteByte((byte)bonus);
+        for (int i = 0; i < 20; i++)
+        {
+            w.WriteByte(i < bonus ? p.Garbage[i].X : (byte)0);
+            w.WriteByte(i < bonus ? p.Garbage[i].Color : (byte)0);
+        }
+        w.WriteBytes(p.Attacks);
+        w.WriteByte(p.LastAttacker);
+        w.WriteBytes(p.Blinded);
+        for (int i = 0; i < 20; i++)
+            w.WriteByte(i < bonus ? p.Garbage[i].BlindTime : (byte)0);
+        for (int i = 0; i < bonus; i++)
+            w.WriteWord((ushort)((p.Garbage[i].HolePos & 0x3FF) | (p.Garbage[i].Final ? 0x8000 : 0)));
     }
 
     private static void WriteGameServer(NetWriter w, GameServerPacket p)

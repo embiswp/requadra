@@ -55,6 +55,50 @@ public sealed class MultiplayerState(GameServerPacket rules)
     /// <summary>Keep the passes of every clear, so a client can time what the attack of a clear does (<see cref="PlayerSim.LastClear"/>).</summary>
     public bool RecordClears { get; init; }
 
+    private static void Download(RemotePlayer p, DownloadPacket d)
+    {
+        for (int row = 0; row < DownloadPacket.Rows; row++)
+            for (int col = 0; col < DownloadPacket.Columns; col++)
+            {
+                byte cell = d.Cells[row * DownloadPacket.Columns + col];
+                p.Sim.Board.Load(row, Board.FirstColumn + col, cell, cell != 0);
+            }
+        int Piece(byte b) => b == DownloadPacket.NoPiece ? -1 : b;
+        p.Sim.Restore(d.Seed, [Piece(d.Bloc), Piece(d.Next), Piece(d.Next2), Piece(d.Next3)],
+            d.Garbage.Select(g => (int)g.X), [.. d.Attacks.Select(a => (int)a)], d.LastAttacker);
+        p.Alive = d.Idle < 2;
+        p.Round = (RoundState)d.State;
+    }
+
+    /// <summary>The state of a player as a connection that joins late is told it: board, queue, garbage and who attacked.</summary>
+    public (DownloadPacket Board, StatPacket Stats) Snapshot(RemotePlayer p)
+    {
+        var cells = new byte[DownloadPacket.Rows * DownloadPacket.Columns];
+        for (int row = 0; row < DownloadPacket.Rows; row++)
+            for (int col = 0; col < DownloadPacket.Columns; col++)
+            {
+                int column = Board.FirstColumn + col;
+                byte cell = p.Sim.Board.Cell(row, column);
+                // An occupied cell with no colour would arrive as an empty one; give it some.
+                cells[row * DownloadPacket.Columns + col] = !p.Sim.Board.IsOccupied(row, column) ? (byte)0 : cell == 0 ? (byte)0x7F : (byte)(cell & 0x7F);
+            }
+        byte Piece(int i) => p.Alive && p.Sim.QueuedPiece(i) >= 0 ? (byte)p.Sim.QueuedPiece(i) : (byte)DownloadPacket.NoPiece;
+        var download = new DownloadPacket
+        {
+            Id = (byte)PacketType.Download, Slot = p.Slot, Cells = cells, Seed = p.Sim.RandomSeed,
+            Idle = p.Alive ? (byte)1 : (byte)2, State = (byte)p.Round,
+            Bloc = Piece(0), Next = Piece(1), Next2 = Piece(2), Next3 = Piece(3),
+            Garbage = [.. p.Sim.PendingGarbage.Select(x => new DownloadedGarbage((byte)x, 0, 0, 0, false))],
+            Attacks = [.. p.Sim.Attacks.Select(a => (byte)a)], LastAttacker = (byte)p.Sim.LastAttacker,
+        };
+        var stats = new StatPacket(
+        [
+            new StatValue(StatValue.Death, p.Sim.Deaths), new StatValue(StatValue.Frag, p.Frags),
+            new StatValue(StatValue.LinesTotal, p.Sim.Lines), new StatValue(StatValue.Score, p.Sim.Score),
+        ]) { Id = (byte)PacketType.Stat, Slot = p.Slot };
+        return (download, stats);
+    }
+
     /// <summary>Takes a player out of the game (they dropped or their connection ended).</summary>
     public void Remove(byte slot) => _players.Remove(slot);
 
@@ -93,6 +137,21 @@ public sealed class MultiplayerState(GameServerPacket rules)
                 break;
             case StatePacket s when s.Id == (byte)PacketType.State && _players.TryGetValue(s.Slot, out var p) && s.State <= (byte)RoundState.Last:
                 p.Round = (RoundState)s.State;
+                break;
+            case DownloadPacket d when _players.TryGetValue(d.Slot, out var p):
+                Download(p, d);
+                break;
+            case StatPacket st when _players.TryGetValue(st.Slot, out var p):
+                int score = p.Sim.Score, lines = p.Sim.Lines, deaths = p.Sim.Deaths;
+                foreach (var (stat, value) in st.Stats)
+                    switch (stat)
+                    {
+                        case StatValue.Score: score = value; break;
+                        case StatValue.LinesTotal: lines = value; break;
+                        case StatValue.Death: deaths = value; break;
+                        case StatValue.Frag: p.Frags = value; break;
+                    }
+                p.Sim.RestoreCounters(score, lines, deaths);
                 break;
             case ServerRandomPacket random:
                 foreach (var player in _players.Values)
