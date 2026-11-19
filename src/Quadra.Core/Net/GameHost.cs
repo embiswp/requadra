@@ -88,6 +88,9 @@ public sealed class GameHost
 
     public HostRules Rules { get; }
 
+    /// <summary>When set, everything the host sends to its connections is also written here, with its frame.</summary>
+    public Demos.DemoRecorder? Recorder { get; set; }
+
     public MultiplayerState State { get; }
 
     /// <summary>Frames left before the game starts: <see cref="WaitingForStart"/> while waiting, 0 once it has.</summary>
@@ -358,6 +361,7 @@ public sealed class GameHost
     // Sends to every joined connection but the one it came from (which already did it itself).
     private void Dispatch(Packet packet, HostPeer? except, bool everyone = false)
     {
+        Recorder?.Add((uint)Frames, packet);
         foreach (var peer in _peers.ToList())
             if (peer != except && (peer.Joined || everyone))
                 Send(peer, packet);

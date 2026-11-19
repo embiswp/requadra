@@ -1,5 +1,6 @@
 using System.Net;
 using System.Runtime.InteropServices;
+using Quadra.Core.Demos;
 using Quadra.Core.Net;
 using Quadra.Core.Qserv;
 
@@ -14,6 +15,7 @@ if (options is null)
         Usage: Quadra.Host [--port 3456] [--name "Game name"] [--seed N] [--survivor]
                            [--max-players 8] [--combo-min N]
                            [--end frags|time|points|lines N] [--list http://host/cgi-bin/qserv.pl]
+                           [--record game.rec]
         """);
     return 1;
 }
@@ -28,6 +30,9 @@ var host = new GameHost(new HostRules
     GameEnd = options.End,
     GameEndValue = options.EndValue,
 });
+
+if (options.Record is not null)
+    host.Recorder = new DemoRecorder(host.State.Rules);
 
 await using var server = new TcpGameServer(host, IPAddress.Any, options.Port);
 server.Start();
@@ -80,11 +85,16 @@ catch (OperationCanceledException)
 }
 
 lan?.Dispose();
+if (options.Record is not null && host.Recorder is { } recorder)
+{
+    recorder.Save(options.Record);
+    Console.WriteLine($"Recorded {recorder.Count} packets to {options.Record}.");
+}
 if (announcer is not null)
     await announcer.DisposeAsync();
 return 0;
 
-internal sealed record HostOptions(int Port, string Name, int Seed, bool Survivor, int MaxPlayers, int ComboMin, Uri? List, GameEnd End = GameEnd.Never, int EndValue = 0)
+internal sealed record HostOptions(int Port, string Name, int Seed, bool Survivor, int MaxPlayers, int ComboMin, Uri? List, GameEnd End = GameEnd.Never, int EndValue = 0, string? Record = null)
 {
     public static HostOptions? Parse(string[] args, out string? error)
     {
@@ -94,6 +104,7 @@ internal sealed record HostOptions(int Port, string Name, int Seed, bool Survivo
         Uri? list = null;
         var end = GameEnd.Never;
         int endValue = 0;
+        string? record = null;
         error = null;
 
         for (int i = 0; i < args.Length; i++)
@@ -118,6 +129,7 @@ internal sealed record HostOptions(int Port, string Name, int Seed, bool Survivo
                         endValue = int.Parse(Value());
                         break;
                     case "--list": list = new Uri(Value()); break;
+                    case "--record": record = Value(); break;
                     default: error = $"Unknown option {args[i]}."; return null;
                 }
             }
@@ -133,6 +145,6 @@ internal sealed record HostOptions(int Port, string Name, int Seed, bool Survivo
             error = "A value is out of range.";
             return null;
         }
-        return new HostOptions(port, name, seed, survivor, maxPlayers, comboMin, list, end, endValue);
+        return new HostOptions(port, name, seed, survivor, maxPlayers, comboMin, list, end, endValue, record);
     }
 }

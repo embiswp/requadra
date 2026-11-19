@@ -200,7 +200,7 @@ public class NetworkGameTests
             }
     }
 
-    private static (LocalNetwork Net, Dictionary<byte, GameClient> Owner) PlayDemo(string name)
+    internal static (LocalNetwork Net, Dictionary<byte, GameClient> Owner) PlayDemo(string name, Action<GameHost>? setup = null)
     {
         var demo = DemoFile.Load(Path.Combine(DemoDir(), name));
         var gs = demo.GameServer!;
@@ -210,6 +210,7 @@ public class NetworkGameTests
             ComboMin = gs.ComboMin, AllowHandicap = gs.AllowHandicap,
         });
 
+        setup?.Invoke(net.Host);
         var owner = new Dictionary<byte, GameClient>();
         foreach (var p in demo.Packets.Select(d => d.Packet).OfType<PlayerPacket>().DistinctBy(p => p.Pos).OrderBy(p => p.Pos))
         {

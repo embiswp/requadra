@@ -583,6 +583,20 @@ last round; the animation itself is the single-player code, which was checked on
 - The list from a search has no player scores or states (the UDP packet does not carry them): players show with
   their teams and handicaps only.
 
+### Recording a hosted game (sixteenth step)
+
+- `DemoRecorder` writes the `.rec` format (size, then a zlib stream of packet hunks) the way `Net_server::record_packet`
+  does: the game packet, then every packet the host sends to its connections (players joining and leaving,
+  stamps, deaths, respawns, garbage, round and end packets, chat), each with the frame it went out in
+  (frames counted from the end of the countdown). `GameHost.Recorder` turns it on; `Quadra.Host --record game.rec`
+  writes the file when the host stops. Tested in `RecordingTests`: the hosted demo00 and demo02 are recorded,
+  read back with `DemoFile` and replayed by `DemoReplay` to the same score, lines, frags and deaths.
+- Not in the recording: `Moves` (clients do not send `ClientMoves` yet, and the original sends them only when
+  the host's `WantsMoves` is set, so the file has no falling pieces), the summary hunk the original adds at the
+  end (`Playback::verify_summary` reads it), and the server log packets. Whether the C++ game plays such a file
+  has not been tried. The window that hosts does not record.
+- Spectating (`ClientStartWatch`, the host sending `Moves` to the watchers of a board) is not built.
+
 ## Suggested next steps
 
 1. Play the client and tune the feel: sound balance, speed per level, key timing, menu use.

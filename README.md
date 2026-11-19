@@ -49,7 +49,7 @@ desktop client plays a network game: the Multi-player item opens a lobby (game l
 join by address); `--host [port]`, `--join host[:port]` and `--name` start one from the command line. Nothing has
 been tried against the original C++ client. A host sets survivor rounds, an end condition (frags, time,
 points, lines) and the minimum combo on the multi-player screen, and the lobby can find games on the
-local network.
+local network. `Quadra.Host --record game.rec` records a hosted game as a demo.
 Newer rules (hot potato, blind attacks) are not planned. See [`doc/spike-notes.md`](doc/spike-notes.md) for what is verified and what is not.
 
 The original game is licensed under the LGPL; see [`LICENSE`](LICENSE). The art and sounds come from the
