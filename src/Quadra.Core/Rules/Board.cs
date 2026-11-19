@@ -56,9 +56,9 @@ public sealed class Board : IBoardView
 
     public bool IsEmpty()
     {
-        for (int j = FirstClearableRow; j < Rows; j++)
-            for (int i = FirstColumn; i < EndColumn; i++)
-                if (_occupied[j, i])
+        for (int row = FirstClearableRow; row < Rows; row++)
+            for (int column = FirstColumn; column < EndColumn; column++)
+                if (_occupied[row, column])
                     return false;
         return true;
     }
@@ -66,12 +66,12 @@ public sealed class Board : IBoardView
     public void Reset()
     {
         Array.Clear(_cell);
-        for (int y = 0; y < Height; y++)
-            for (int x = 0; x < Width; x++)
+        for (int row = 0; row < Height; row++)
+            for (int column = 0; column < Width; column++)
             {
-                bool wall = y >= Rows || x < FirstColumn || x >= EndColumn;
-                _occupied[y, x] = wall;
-                _supported[y, x] = y == Rows || (y < Rows && x is < FirstColumn or >= EndColumn);
+                bool wall = row >= Rows || column < FirstColumn || column >= EndColumn;
+                _occupied[row, column] = wall;
+                _supported[row, column] = row == Rows || (row < Rows && column is < FirstColumn or >= EndColumn);
             }
     }
 
@@ -91,9 +91,9 @@ public sealed class Board : IBoardView
 
     public bool Collides(int piece, int rotation, int x, int y)
     {
-        for (int j = 0; j < 4; j++)
-            for (int i = 0; i < 4; i++)
-                if (Pieces.Shapes[piece, rotation, j, i] != 0 && IsOccupied(y + j, x + i))
+        for (int row = 0; row < 4; row++)
+            for (int column = 0; column < 4; column++)
+                if (Pieces.Shapes[piece, rotation, row, column] != 0 && IsOccupied(y + row, x + column))
                     return true;
         return false;
     }
@@ -104,14 +104,14 @@ public sealed class Board : IBoardView
 
     public void Stamp(int piece, int rotation, int x, int y)
     {
-        for (int j = 0; j < 4; j++)
-            for (int i = 0; i < 4; i++)
+        for (int row = 0; row < 4; row++)
+            for (int column = 0; column < 4; column++)
             {
-                byte t = Pieces.Shapes[piece, rotation, j, i];
-                if (t != 0 && InRange(y + j, x + i))
+                byte shape = Pieces.Shapes[piece, rotation, row, column];
+                if (shape != 0 && InRange(y + row, x + column))
                 {
-                    _cell[y + j, x + i] = (byte)(t + (piece << 4));
-                    _occupied[y + j, x + i] = true;
+                    _cell[y + row, x + column] = (byte)(shape + (piece << CellEdge.ColorShift));
+                    _occupied[y + row, x + column] = true;
                 }
             }
     }
@@ -121,27 +121,28 @@ public sealed class Board : IBoardView
     /// borders above and below. Rows are removed in place; nothing falls until
     /// <see cref="DropUnsupported"/>. Returns the number of rows removed.
     /// </summary>
-    public int ClearFullRows(List<int>? rows = null)
+    public int ClearFullRows(List<int>? clearedRows = null)
     {
         int cleared = 0;
-        for (int j = FirstClearableRow; j < Rows; j++)
+        for (int row = FirstClearableRow; row < Rows; row++)
         {
             bool full = true;
-            for (int i = FirstColumn; i < EndColumn && full; i++)
-                full = _occupied[j, i];
+            for (int column = FirstColumn; column < EndColumn && full; column++)
+                full = _occupied[row, column];
             if (!full)
                 continue;
 
-            for (int i = FirstColumn; i < EndColumn; i++)
+            for (int column = FirstColumn; column < EndColumn; column++)
             {
-                if (_occupied[j - 1, i] && (_cell[j - 1, i] & 8) == 0)
-                    _cell[j - 1, i] |= 8;
-                _cell[j, i] = 0;
-                _occupied[j, i] = false;
-                if (_occupied[j + 1, i] && (_cell[j + 1, i] & 2) == 0)
-                    _cell[j + 1, i] |= 2;
+                // What was joined to this row above and below now has an edge there.
+                if (_occupied[row - 1, column])
+                    _cell[row - 1, column] |= CellEdge.Bottom;
+                _cell[row, column] = 0;
+                _occupied[row, column] = false;
+                if (_occupied[row + 1, column])
+                    _cell[row + 1, column] |= CellEdge.Top;
             }
-            rows?.Add(j);
+            clearedRows?.Add(row);
             cleared++;
         }
         return cleared;
@@ -149,45 +150,51 @@ public sealed class Board : IBoardView
 
     /// <summary>
     /// Lets cells that no longer rest on anything fall one row at a time until everything is
-    /// supported again (<c>Player_check_link</c>). Cells stay together through their border bits.
+    /// supported again (<c>Player_check_link</c>). Cells stay together through their edge bits.
     /// </summary>
     /// <param name="steps">If given, receives a snapshot after every step in which cells moved down.</param>
     /// <returns>The number of steps in which cells moved down.</returns>
     public int DropUnsupported(List<BoardSnapshot>? steps = null)
     {
-        int moves = 0;
+        int fallSteps = 0;
         ClearSupport();
         while (true)
         {
-            bool grew;
-            do
-            {
-                grew = false;
-                for (int j = Rows - 1; j >= 0; j--)
-                    for (int i = FirstColumn; i < EndColumn; i++)
-                        if ((_cell[j, i] & 8) != 0 && !_supported[j, i] && _supported[j + 1, i])
-                        {
-                            FillSupported(i, j);
-                            grew = true;
-                        }
-            } while (grew);
+            SpreadSupportUpwards();
 
-            bool moved = false;
-            for (int j = Rows - 1; j >= 0; j--)
-                for (int i = FirstColumn; i < EndColumn; i++)
-                    if (_occupied[j, i] && !_supported[j, i])
+            bool anyFell = false;
+            for (int row = Rows - 1; row >= 0; row--)
+                for (int column = FirstColumn; column < EndColumn; column++)
+                    if (_occupied[row, column] && !_supported[row, column])
                     {
-                        moved = true;
-                        _cell[j + 1, i] = _cell[j, i];
-                        _occupied[j + 1, i] = true;
-                        _cell[j, i] = 0;
-                        _occupied[j, i] = false;
+                        anyFell = true;
+                        _cell[row + 1, column] = _cell[row, column];
+                        _occupied[row + 1, column] = true;
+                        _cell[row, column] = 0;
+                        _occupied[row, column] = false;
                     }
-            if (!moved)
-                return moves;
-            moves++;
+            if (!anyFell)
+                return fallSteps;
+            fallSteps++;
             steps?.Add(Snapshot());
         }
+    }
+
+    // A cell with an edge below it that rests on something supported is supported itself, and so is everything joined to it.
+    private void SpreadSupportUpwards()
+    {
+        bool spread;
+        do
+        {
+            spread = false;
+            for (int row = Rows - 1; row >= 0; row--)
+                for (int column = FirstColumn; column < EndColumn; column++)
+                    if ((_cell[row, column] & CellEdge.Bottom) != 0 && !_supported[row, column] && _supported[row + 1, column])
+                    {
+                        MarkSupportedWithNeighbours(column, row);
+                        spread = true;
+                    }
+        } while (spread);
     }
 
     /// <summary>
@@ -198,65 +205,64 @@ public sealed class Board : IBoardView
     /// <param name="holeColumns">Hole column (4-13) of each garbage row, oldest first.</param>
     public void AddGarbage(IReadOnlyList<int> holeColumns)
     {
-        bool firstDone = false;
-        foreach (int column in holeColumns)
+        const int bottomRow = Rows - 1;
+        bool isFirstRow = true;
+        foreach (int holeColumn in holeColumns)
         {
-            for (int j = 0; j < Rows - 1; j++)
-                for (int i = FirstColumn; i < EndColumn; i++)
+            for (int row = 0; row < bottomRow; row++)
+                for (int column = FirstColumn; column < EndColumn; column++)
                 {
-                    _cell[j, i] = _cell[j + 1, i];
-                    _occupied[j, i] = _occupied[j + 1, i];
+                    _cell[row, column] = _cell[row + 1, column];
+                    _occupied[row, column] = _occupied[row + 1, column];
                 }
 
-            int hole = 1 << (9 - (column - FirstColumn));
-            const int last = Rows - 1;
-            for (int i = FirstColumn; i < EndColumn; i++)
+            for (int column = FirstColumn; column < EndColumn; column++)
             {
-                _cell[last, i] = 2 | 8;
-                _occupied[last, i] = true;
+                _cell[bottomRow, column] = CellEdge.Top | CellEdge.Bottom;
+                _occupied[bottomRow, column] = true;
             }
 
-            for (int i = FirstColumn; i < EndColumn; i++)
+            for (int column = FirstColumn; column < EndColumn; column++)
             {
-                if ((hole & 512) != 0)
+                if (column == holeColumn)
                 {
-                    _cell[last, i] = 0;
-                    _occupied[last, i] = false;
-                    if (firstDone && _occupied[last - 1, i])
-                        _cell[last - 1, i] |= 8;
-                    if (i > FirstColumn)
+                    _cell[bottomRow, column] = 0;
+                    _occupied[bottomRow, column] = false;
+                    if (!isFirstRow && _occupied[bottomRow - 1, column])
+                        _cell[bottomRow - 1, column] |= CellEdge.Bottom;
+                    if (column > FirstColumn)
                     {
-                        if (_occupied[last, i - 1])
-                            _cell[last, i - 1] |= 4;
-                        if (_occupied[last, FirstColumn])
-                            _cell[last, FirstColumn] |= 1;
+                        if (_occupied[bottomRow, column - 1])
+                            _cell[bottomRow, column - 1] |= CellEdge.Right;
+                        if (_occupied[bottomRow, FirstColumn])
+                            _cell[bottomRow, FirstColumn] |= CellEdge.Left;
                     }
-                    _cell[last, i + 1] |= 1;
-                    _cell[last, EndColumn] |= 4;
+                    _cell[bottomRow, column + 1] |= CellEdge.Left;
+                    _cell[bottomRow, EndColumn] |= CellEdge.Right;
                 }
-                else if (firstDone && !_occupied[last - 1, i])
+                else if (!isFirstRow && !_occupied[bottomRow - 1, column])
                 {
-                    _cell[last, i] |= 2;
+                    _cell[bottomRow, column] |= CellEdge.Top;
                 }
-                hole = (hole << 1) & 0xFFFF;
             }
-            firstDone = true;
+            isFirstRow = false;
         }
 
-        for (int i = FirstColumn; i < EndColumn; i++)
-            if (_occupied[0, i])
-                _cell[0, i] |= 2; // clip the top
+        for (int column = FirstColumn; column < EndColumn; column++)
+            if (_occupied[0, column])
+                _cell[0, column] |= CellEdge.Top;     // clip the top
         DropUnsupported();
     }
 
     private void ClearSupport()
     {
-        for (int j = 0; j < Rows; j++)
-            for (int i = FirstColumn; i < EndColumn; i++)
-                _supported[j, i] = false;
+        for (int row = 0; row < Rows; row++)
+            for (int column = FirstColumn; column < EndColumn; column++)
+                _supported[row, column] = false;
     }
 
-    private void FillSupported(int x, int y)
+    // Marks a cell supported, and every cell joined to it.
+    private void MarkSupportedWithNeighbours(int x, int y)
     {
         var pending = new Stack<(int X, int Y)>();
         _supported[y, x] = true;
@@ -264,11 +270,11 @@ public sealed class Board : IBoardView
         while (pending.Count > 0)
         {
             (x, y) = pending.Pop();
-            byte b = _cell[y, x];
-            if ((b & 8) == 0 && !_supported[y + 1, x]) { _supported[y + 1, x] = true; pending.Push((x, y + 1)); }
-            if ((b & 1) == 0 && !_supported[y, x - 1]) { _supported[y, x - 1] = true; pending.Push((x - 1, y)); }
-            if ((b & 4) == 0 && !_supported[y, x + 1]) { _supported[y, x + 1] = true; pending.Push((x + 1, y)); }
-            if (y > 0 && (b & 2) == 0 && !_supported[y - 1, x]) { _supported[y - 1, x] = true; pending.Push((x, y - 1)); }
+            byte edges = _cell[y, x];
+            if ((edges & CellEdge.Bottom) == 0 && !_supported[y + 1, x]) { _supported[y + 1, x] = true; pending.Push((x, y + 1)); }
+            if ((edges & CellEdge.Left) == 0 && !_supported[y, x - 1]) { _supported[y, x - 1] = true; pending.Push((x - 1, y)); }
+            if ((edges & CellEdge.Right) == 0 && !_supported[y, x + 1]) { _supported[y, x + 1] = true; pending.Push((x + 1, y)); }
+            if (y > 0 && (edges & CellEdge.Top) == 0 && !_supported[y - 1, x]) { _supported[y - 1, x] = true; pending.Push((x, y - 1)); }
         }
     }
 

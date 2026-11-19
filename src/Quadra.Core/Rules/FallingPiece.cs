@@ -51,15 +51,23 @@ public sealed class FallingPiece
     /// <summary>Column and row where every piece appears.</summary>
     public const int SpawnColumn = 7;
     public const int SpawnRow = 10;
-    private const int RowUnits = 18 << 4;
     private const int FirstColumn = Board.FirstColumn;
+
+    // Positions are in sixteenths of a pixel, so that slow gravity can move a piece less than a pixel per frame.
+    private const int UnitsPerPixel = 16;
+    private const int CellPixels = 18;
+    private const int RowUnits = CellPixels * UnitsPerPixel;
+
+    /// <summary>How far above its row a piece's top is drawn: one cell and a pixel.</summary>
+    private const int TopOffsetUnits = 17 * UnitsPerPixel;
+    private const int DisplayRow = 12;      // the row at which the vertical position is 0
 
     private readonly Board _board;
     private int _gravity;
     private readonly int _softDrop;
     private int _sideSpeed = LegacySpeeds.SideSpeed(2);
-    private int _y; // vertical position in sub-row units
-    private int _x; // where the piece is drawn horizontally, sub-row units; it slides towards the column
+    private int _y;     // vertical position, in units
+    private int _x;     // where the piece is drawn horizontally, in units; it slides towards the column
 
     public FallingPiece(Board board, int gravity, int softDrop)
     {
@@ -107,7 +115,7 @@ public sealed class FallingPiece
         Row = SpawnRow;
         Rotation = 0;
         // The C++ constructor starts one cell-and-a-bit above the row it reports.
-        _y = (SpawnRow - 12) * RowUnits - (17 << 4);
+        _y = (SpawnRow - DisplayRow) * RowUnits - TopOffsetUnits;
         _x = (SpawnColumn - FirstColumn) * RowUnits;
         Frames = 0;
     }
@@ -162,7 +170,7 @@ public sealed class FallingPiece
         else
         {
             // Settle just short of the next row so that gravity lands the piece on the next frame.
-            _y = (Row - 12) * RowUnits - 1;
+            _y = (Row - DisplayRow) * RowUnits - 1;
         }
     }
 
@@ -170,7 +178,7 @@ public sealed class FallingPiece
     {
         while (!Collides(Column, Row + 1, Rotation))
             Row++;
-        _y = (Row - 12) * RowUnits;
+        _y = (Row - DisplayRow) * RowUnits;
         _x = (Column - FirstColumn) * RowUnits;
     }
 
@@ -225,12 +233,12 @@ public sealed class FallingPiece
                 next = target;
         }
         // Only slide if the piece would not pass through a block on the way (as in the C++ client).
-        if (!Collides(Column, RowAt(_y - (17 << 4) - 15), Rotation))
+        if (!Collides(Column, RowAt(_y - TopOffsetUnits - 15), Rotation))
             _x = next;
     }
 
     /// <summary>Board row that a vertical position falls into (<c>Player_base::calc_by</c>).</summary>
-    private static int RowAt(int y) => ((((y + 15 + (12 * 18 << 4)) >> 4) + 17) / 18) & 0xFF;
+    private static int RowAt(int y) => ((((y + 15 + DisplayRow * RowUnits) / UnitsPerPixel) + 17) / CellPixels) & 0xFF;
 
     // The C++ code passes uint8_t coordinates, so negative values wrap.
     private bool Collides(int x, int y, int rotation) => _board.Collides(Piece, rotation, x & 0xFF, y & 0xFF);
