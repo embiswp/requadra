@@ -26,6 +26,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Quadra.Core\Quadra.Core.csproj" />
     <ProjectReference Include="..\..\src\Quadra.Server\Quadra.Server.csproj" />
+    <ProjectReference Include="..\..\src\Quadra.Desktop\Quadra.Desktop.csproj" />
   </ItemGroup>
 
 </Project>
