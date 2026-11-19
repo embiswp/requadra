@@ -20,14 +20,14 @@ public static class MenuLayouts
 
     private static readonly (string Id, int X, int Y)[] MainEnglish =
     [
-        ("single", 160, 99), ("multi", 166, 139), ("demo", 214, 183), ("scores", 235, 225),
-        ("setup", 221, 267), ("options", 264, 310), ("help", 261, 351), ("quit", 295, 392),
+        (MenuId.SinglePlayer, 160, 99), (MenuId.MultiPlayer, 166, 139), (MenuId.Demo, 214, 183), (MenuId.HighScores, 235, 225),
+        (MenuId.Setup, 221, 267), (MenuId.Options, 264, 310), (MenuId.Help, 261, 351), (MenuId.Quit, 295, 392),
     ];
 
     private static readonly (string Id, int X, int Y)[] MainFrench =
     [
-        ("single", 223, 94), ("multi", 145, 136), ("demo", 174, 175), ("scores", 240, 219),
-        ("setup", 160, 261), ("options", 257, 303), ("help", 223, 344), ("quit", 261, 386),
+        (MenuId.SinglePlayer, 223, 94), (MenuId.MultiPlayer, 145, 136), (MenuId.Demo, 174, 175), (MenuId.HighScores, 240, 219),
+        (MenuId.Setup, 160, 261), (MenuId.Options, 257, 303), (MenuId.Help, 223, 344), (MenuId.Quit, 261, 386),
     ];
 
     public static MenuScreen Main(int language, ImageSize size)
@@ -63,28 +63,28 @@ public static class MenuLayouts
     // Picture number -> what it is.
     private static readonly string[] SetupIds =
     [
-        "player", "name", "password", "shadow", "smooth", "hspeed", "vspeed", "continuous",
-        "key.left", "key.right", "key.down", "key.drop", "key.rotatecw", "key.rotateccw", "key.twice", "allkeys",
+        MenuId.Player, MenuId.Name, MenuId.Password, MenuId.Shadow, MenuId.Smooth, MenuId.HorizontalSpeed, MenuId.VerticalSpeed, MenuId.ContinuousDown,
+        MenuId.KeyLeft, MenuId.KeyRight, MenuId.KeyDown, MenuId.KeyDrop, MenuId.KeyRotateClockwise, MenuId.KeyRotateCounterClockwise, MenuId.KeyRotateTwice, MenuId.AllKeys,
     ];
 
     /// <summary>Where the current value of a setting is shown (the same in both languages).</summary>
     public static readonly IReadOnlyDictionary<string, (int X, int Y, int Width)> SetupValues = new Dictionary<string, (int, int, int)>
     {
-        ["player"] = (333, 11, 40),
-        ["name"] = (333, 106, 110),
-        ["password"] = (333, 132, 200),
-        ["shadow"] = (333, 161, 80),
-        ["smooth"] = (333, 192, 80),
-        ["hspeed"] = (333, 220, 120),
-        ["vspeed"] = (333, 252, 120),
-        ["continuous"] = (333, 281, 80),
-        ["key.left"] = (148, 347, 120),
-        ["key.right"] = (148, 378, 120),
-        ["key.down"] = (148, 408, 120),
-        ["key.drop"] = (148, 439, 120),
-        ["key.rotatecw"] = (513, 350, 125),
-        ["key.rotateccw"] = (513, 380, 125),
-        ["key.twice"] = (513, 411, 125),
+        [MenuId.Player] = (333, 11, 40),
+        [MenuId.Name] = (333, 106, 110),
+        [MenuId.Password] = (333, 132, 200),
+        [MenuId.Shadow] = (333, 161, 80),
+        [MenuId.Smooth] = (333, 192, 80),
+        [MenuId.HorizontalSpeed] = (333, 220, 120),
+        [MenuId.VerticalSpeed] = (333, 252, 120),
+        [MenuId.ContinuousDown] = (333, 281, 80),
+        [MenuId.KeyLeft] = (148, 347, 120),
+        [MenuId.KeyRight] = (148, 378, 120),
+        [MenuId.KeyDown] = (148, 408, 120),
+        [MenuId.KeyDrop] = (148, 439, 120),
+        [MenuId.KeyRotateClockwise] = (513, 350, 125),
+        [MenuId.KeyRotateCounterClockwise] = (513, 380, 125),
+        [MenuId.KeyRotateTwice] = (513, 411, 125),
     };
 
     public const int SetupPromptX = 180, SetupPromptY = 315, SetupPromptWidth = 280;
@@ -102,7 +102,7 @@ public static class MenuLayouts
         // The value next to a label can be clicked too.
         foreach (var (id, (x, y, width)) in SetupValues)
             items.Add(new MenuItem(id, x, y, width, 22) { KeyboardFocusable = false });
-        items.Add(new MenuItem("back", BackButtonX, BackButtonY, BackButtonWidth, BackButtonHeight));
+        items.Add(new MenuItem(MenuId.Back, BackButtonX, BackButtonY, BackButtonWidth, BackButtonHeight));
         return new MenuScreen(items);
     }
 
@@ -114,8 +114,8 @@ public static class MenuLayouts
 
     public static MenuScreen Options() => new(
     [
-        new MenuItem("language", OptionsLanguageX, OptionsLanguageY, OptionsLanguageWidth, 22),
-        new MenuItem("back", BackButtonX, BackButtonY, BackButtonWidth, BackButtonHeight),
+        new MenuItem(MenuId.Language, OptionsLanguageX, OptionsLanguageY, OptionsLanguageWidth, 22),
+        new MenuItem(MenuId.Back, BackButtonX, BackButtonY, BackButtonWidth, BackButtonHeight),
     ]);
 
     // ---- high scores ---------------------------------------------------------------------------------
@@ -134,10 +134,10 @@ public static class MenuLayouts
         if (playAgain)
         {
             var (w, h) = size(againRest);
-            items.Add(new MenuItem("again", 38, 410, w, h, againRest, againHover));
+            items.Add(new MenuItem(MenuId.PlayAgain, 38, 410, w, h, againRest, againHover));
         }
         var (bw, bh) = size(backRest);
-        items.Add(new MenuItem("back", 485, 410, bw, bh, backRest, backHover));
+        items.Add(new MenuItem(MenuId.Back, 485, 410, bw, bh, backRest, backHover));
         return new MenuScreen(items);
     }
 
@@ -160,19 +160,19 @@ public static class MenuLayouts
         var items = new List<MenuItem>();
         for (int i = 0; i < Math.Min(gameCount, LobbyRows); i++)
             items.Add(new MenuItem($"game.{i}", LobbyListX, LobbyListY + LobbyRowStep * i, LobbyListWidth, 20));
-        items.Add(new MenuItem("host", LobbyHostX, LobbyButtonY, LobbyHostWidth, 22));
-        items.Add(new MenuItem("refresh", LobbyRefreshX, LobbyButtonY, LobbyRefreshWidth, 22));
-        items.Add(new MenuItem("team", LobbyTeamX, LobbyButtonY, LobbyTeamWidth, 22));
-        items.Add(new MenuItem("handicap", LobbyHandicapX, LobbyButtonY, LobbyHandicapWidth, 22));
-        items.Add(new MenuItem("address", LobbyFieldX, LobbyAddressY, LobbyAddressWidth, 22));
-        items.Add(new MenuItem("join", LobbyJoinX, LobbyAddressY, LobbyJoinWidth, 22));
-        items.Add(new MenuItem("lan", LobbyLanX, LobbyAddressY, LobbyLanWidth, 22));
-        items.Add(new MenuItem("server", LobbyFieldX, LobbyServerY, LobbyServerWidth, 22));
-        items.Add(new MenuItem("survivor", 105, LobbyRulesY, 50, 22));
-        items.Add(new MenuItem("end", 205, LobbyRulesY, 90, 22));
-        items.Add(new MenuItem("endvalue", 300, LobbyRulesY, 50, 22));
-        items.Add(new MenuItem("combo", 420, LobbyRulesY, 40, 22));
-        items.Add(new MenuItem("back", BackButtonX, BackButtonY, BackButtonWidth, BackButtonHeight));
+        items.Add(new MenuItem(MenuId.Host, LobbyHostX, LobbyButtonY, LobbyHostWidth, 22));
+        items.Add(new MenuItem(MenuId.Refresh, LobbyRefreshX, LobbyButtonY, LobbyRefreshWidth, 22));
+        items.Add(new MenuItem(MenuId.Team, LobbyTeamX, LobbyButtonY, LobbyTeamWidth, 22));
+        items.Add(new MenuItem(MenuId.Handicap, LobbyHandicapX, LobbyButtonY, LobbyHandicapWidth, 22));
+        items.Add(new MenuItem(MenuId.Address, LobbyFieldX, LobbyAddressY, LobbyAddressWidth, 22));
+        items.Add(new MenuItem(MenuId.Join, LobbyJoinX, LobbyAddressY, LobbyJoinWidth, 22));
+        items.Add(new MenuItem(MenuId.FindOnLan, LobbyLanX, LobbyAddressY, LobbyLanWidth, 22));
+        items.Add(new MenuItem(MenuId.ListServer, LobbyFieldX, LobbyServerY, LobbyServerWidth, 22));
+        items.Add(new MenuItem(MenuId.Survivor, 105, LobbyRulesY, 50, 22));
+        items.Add(new MenuItem(MenuId.GameEnd, 205, LobbyRulesY, 90, 22));
+        items.Add(new MenuItem(MenuId.GameEndValue, 300, LobbyRulesY, 50, 22));
+        items.Add(new MenuItem(MenuId.MinimumCombo, 420, LobbyRulesY, 40, 22));
+        items.Add(new MenuItem(MenuId.Back, BackButtonX, BackButtonY, BackButtonWidth, BackButtonHeight));
         return new MenuScreen(items);
     }
 }

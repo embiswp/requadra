@@ -53,18 +53,18 @@ public sealed class LobbyModel(GameSettings settings)
     public string FieldText(string id) =>
         id switch
         {
-            "address" => Address + (Edit == LobbyEdit.Address ? "_" : ""),
-            "server" => ServerUrl + (Edit == LobbyEdit.Server ? "_" : ""),
+            MenuId.Address => Address + (Edit == LobbyEdit.Address ? "_" : ""),
+            MenuId.ListServer => ServerUrl + (Edit == LobbyEdit.Server ? "_" : ""),
             _ => "",
         };
 
     /// <summary>What to show for the team and handicap values.</summary>
     public string ValueText(string id) => id switch
     {
-        "team" => settings.CurrentPlayer.Team < 0 ? "auto" : (settings.CurrentPlayer.Team + 1).ToString(CultureInfo.InvariantCulture),
-        "handicap" => settings.CurrentPlayer.Handicap.ToString(CultureInfo.InvariantCulture),
-        "survivor" => settings.Rules.Survivor ? "on" : "off",
-        "end" => settings.Rules.End switch
+        MenuId.Team => settings.CurrentPlayer.Team < 0 ? "auto" : (settings.CurrentPlayer.Team + 1).ToString(CultureInfo.InvariantCulture),
+        MenuId.Handicap => settings.CurrentPlayer.Handicap.ToString(CultureInfo.InvariantCulture),
+        MenuId.Survivor => settings.Rules.Survivor ? "on" : "off",
+        MenuId.GameEnd => settings.Rules.End switch
         {
             Net.GameEnd.Frag => "frags",
             Net.GameEnd.Time => "minutes",
@@ -72,8 +72,8 @@ public sealed class LobbyModel(GameSettings settings)
             Net.GameEnd.Lines => "lines",
             _ => "never",
         },
-        "endvalue" => settings.Rules.End == Net.GameEnd.Never ? "-" : settings.Rules.EndValue.ToString(CultureInfo.InvariantCulture),
-        "combo" => settings.Rules.ComboMin.ToString(CultureInfo.InvariantCulture),
+        MenuId.GameEndValue => settings.Rules.End == Net.GameEnd.Never ? "-" : settings.Rules.EndValue.ToString(CultureInfo.InvariantCulture),
+        MenuId.MinimumCombo => settings.Rules.ComboMin.ToString(CultureInfo.InvariantCulture),
         _ => FieldText(id),
     };
 
@@ -81,20 +81,20 @@ public sealed class LobbyModel(GameSettings settings)
     public void Cycle(string id, int direction)
     {
         var player = settings.CurrentPlayer;
-        if (id == "team")
+        if (id == MenuId.Team)
             player.Team = Wrap(player.Team + 1 + direction, PacketLimits.Teams + 1) - 1;
-        else if (id == "handicap")
+        else if (id == MenuId.Handicap)
             player.Handicap = Wrap(player.Handicap + direction, PlayerSettings.MaxHandicap + 1);
-        else if (id == "survivor")
+        else if (id == MenuId.Survivor)
             settings.Rules.Survivor = !settings.Rules.Survivor;
-        else if (id == "end")
+        else if (id == MenuId.GameEnd)
             settings.Rules.End = (Net.GameEnd)Wrap((int)settings.Rules.End + direction, Enum.GetValues<Net.GameEnd>().Length);
-        else if (id == "endvalue" && settings.Rules.End != Net.GameEnd.Never)
+        else if (id == MenuId.GameEndValue && settings.Rules.End != Net.GameEnd.Never)
         {
             int step = settings.Rules.End is Net.GameEnd.Frag or Net.GameEnd.Time ? 1 : 10;
             settings.Rules.EndValue = Math.Clamp(settings.Rules.EndValue + direction * step, 0, HostSettings.MaxEndValue);
         }
-        else if (id == "combo")
+        else if (id == MenuId.MinimumCombo)
             settings.Rules.ComboMin = Wrap(settings.Rules.ComboMin + direction, HostSettings.MaxComboMin + 1);
     }
 
@@ -102,8 +102,8 @@ public sealed class LobbyModel(GameSettings settings)
 
     public void BeginEdit(string id) => Edit = id switch
     {
-        "address" => LobbyEdit.Address,
-        "server" => LobbyEdit.Server,
+        MenuId.Address => LobbyEdit.Address,
+        MenuId.ListServer => LobbyEdit.Server,
         _ => Edit,
     };
 

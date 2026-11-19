@@ -131,9 +131,9 @@ public sealed class AppFlow
         Notice = null;
         if (Current == Screen.Setup)
             Setup.Cycle(id, direction);
-        else if (Current == Screen.Options && id == "language")
+        else if (Current == Screen.Options && id == MenuId.Language)
             ActivateOptions(id);
-        else if (Current == Screen.Lobby && id is "team" or "handicap" or "survivor" or "end" or "endvalue" or "combo")
+        else if (Current == Screen.Lobby && id is MenuId.Team or MenuId.Handicap or MenuId.Survivor or MenuId.GameEnd or MenuId.GameEndValue or MenuId.MinimumCombo)
             Lobby.Cycle(id, direction);
     }
 
@@ -199,14 +199,14 @@ public sealed class AppFlow
     {
         switch (id)
         {
-            case "single": Show(Screen.Playing); break;
-            case "scores": Show(Screen.HighScores); break;
-            case "setup": Show(Screen.Setup); break;
-            case "options": Show(Screen.Options); break;
-            case "quit": QuitRequested = true; break;
-            case "multi": Show(Screen.Lobby); break;
-            case "demo":
-            case "help":
+            case MenuId.SinglePlayer: Show(Screen.Playing); break;
+            case MenuId.HighScores: Show(Screen.HighScores); break;
+            case MenuId.Setup: Show(Screen.Setup); break;
+            case MenuId.Options: Show(Screen.Options); break;
+            case MenuId.Quit: QuitRequested = true; break;
+            case MenuId.MultiPlayer: Show(Screen.Lobby); break;
+            case MenuId.Demo:
+            case MenuId.Help:
                 Notice = NotAvailableYet[Language];
                 break;
         }
@@ -214,7 +214,7 @@ public sealed class AppFlow
 
     private void ActivateSetup(string id)
     {
-        if (id == "back")
+        if (id == MenuId.Back)
             LeaveSetup();
         else
             Setup.Activate(id);
@@ -230,14 +230,14 @@ public sealed class AppFlow
 
     private void ActivateOptions(string id)
     {
-        if (id == "language")
+        if (id == MenuId.Language)
         {
             Settings.Language = (Settings.Language + 1) % GameSettings.LanguageCount;
             Text = _textFor(Settings.Language);
             Setup.SetText(Text);
             _saveSettings();
         }
-        else if (id == "back")
+        else if (id == MenuId.Back)
         {
             Show(Screen.Main);
         }
@@ -245,9 +245,9 @@ public sealed class AppFlow
 
     private void ActivateHighScores(string id)
     {
-        if (id == "again")
+        if (id == MenuId.PlayAgain)
             Show(Screen.Playing);
-        else if (id == "back")
+        else if (id == MenuId.Back)
             Show(Screen.Main);
     }
 
@@ -258,7 +258,7 @@ public sealed class AppFlow
             FinishLobbyEdit();      // a click anywhere else ends the typing, then does its own thing
         }
 
-        if (id.StartsWith("game.", StringComparison.Ordinal) && int.TryParse(id.AsSpan(5), out int index) && index < Lobby.Games.Count)
+        if (id.StartsWith(MenuId.GamePrefix, StringComparison.Ordinal) && int.TryParse(id.AsSpan(5), out int index) && index < Lobby.Games.Count)
         {
             _networkRequest = LobbyModel.JoinTarget(Lobby.Games[index]);
             return;
@@ -266,26 +266,26 @@ public sealed class AppFlow
 
         switch (id)
         {
-            case "host": _networkRequest = new NetworkRequest(true, "127.0.0.1", LobbyModel.DefaultPort); break;
-            case "refresh":
+            case MenuId.Host: _networkRequest = new NetworkRequest(true, "127.0.0.1", LobbyModel.DefaultPort); break;
+            case MenuId.Refresh:
                 _gameListRequested = true;
                 Lobby.Status = GameListStatus("No game list server is set");
                 break;
-            case "lan":
+            case MenuId.FindOnLan:
                 _lanSearchRequested = true;
                 Lobby.Status = "Looking for games on the local network...";
                 break;
-            case "address" or "server": Lobby.BeginEdit(id); break;
-            case "team" or "handicap" or "survivor" or "end" or "endvalue" or "combo":
+            case MenuId.Address or MenuId.ListServer: Lobby.BeginEdit(id); break;
+            case MenuId.Team or MenuId.Handicap or MenuId.Survivor or MenuId.GameEnd or MenuId.GameEndValue or MenuId.MinimumCombo:
                 Lobby.Cycle(id, 1);
                 _saveSettings();
                 break;
-            case "join":
+            case MenuId.Join:
                 _networkRequest = LobbyModel.ParseAddress(Lobby.Address);
                 if (_networkRequest is null)
                     Lobby.Status = "Type an address like host or host:port";
                 break;
-            case "back": Show(Screen.Main); break;
+            case MenuId.Back: Show(Screen.Main); break;
         }
     }
 

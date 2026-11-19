@@ -92,8 +92,8 @@ internal sealed class MenuInput(AppFlow flow, GameSounds sounds)
     /// <summary>Something was chosen: a click sound (a tap sound for a value), then the flow decides.</summary>
     private void Choose(string id)
     {
-        bool isValue = flow.Current == Screen.Setup && id is "player" or "shadow" or "smooth" or "hspeed" or "vspeed" or "continuous"
-                       || flow.Current == Screen.Options && id == "language";
+        bool isValue = flow.Current == Screen.Setup && id is MenuId.Player or MenuId.Shadow or MenuId.Smooth or MenuId.HorizontalSpeed or MenuId.VerticalSpeed or MenuId.ContinuousDown
+                       || flow.Current == Screen.Options && id == MenuId.Language;
         if (isValue)
             sounds.MenuValue();
         else

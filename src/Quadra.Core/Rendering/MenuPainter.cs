@@ -79,14 +79,14 @@ public sealed class MenuPainter
             string value = setup.ValueText(id);
             if (!caretOn && value.EndsWith('_'))
                 value = value[..^1];
-            bool typed = id is "name" or "password";
+            bool typed = id is MenuId.Name or MenuId.Password;
             Panel(x, y, width, value, centered: !typed, highlighted: focusedId == id);
         }
 
         if (setup.Prompt is { } prompt)
             Panel(MenuLayouts.SetupPromptX, MenuLayouts.SetupPromptY, MenuLayouts.SetupPromptWidth, prompt, centered: false, highlighted: true);
 
-        BackButton(flow, focusedId == "back");
+        BackButton(flow, focusedId == MenuId.Back);
     }
 
     // ---- options ------------------------------------------------------------------------------------
@@ -100,8 +100,8 @@ public sealed class MenuPainter
 
         string language = text.Get(flow.Language == 0 ? LegacyText.English : LegacyText.French);
         Panel(MenuLayouts.OptionsLanguageX, MenuLayouts.OptionsLanguageY, MenuLayouts.OptionsLanguageWidth, language,
-            centered: true, highlighted: flow.Menu.FocusedItem?.Id == "language");
-        BackButton(flow, flow.Menu.FocusedItem?.Id == "back");
+            centered: true, highlighted: flow.Menu.FocusedItem?.Id == MenuId.Language);
+        BackButton(flow, flow.Menu.FocusedItem?.Id == MenuId.Back);
     }
 
     // ---- lobby --------------------------------------------------------------------------------------
@@ -127,35 +127,35 @@ public sealed class MenuPainter
             _text.Draw(Overlay, parts[2], x + 450, y, color);
         }
 
-        _text.Draw(Overlay, "Host a game", MenuLayouts.LobbyHostX, MenuLayouts.LobbyButtonY + 2, focused == "host" ? White : Yellow);
-        _text.Draw(Overlay, "Refresh", MenuLayouts.LobbyRefreshX, MenuLayouts.LobbyButtonY + 2, focused == "refresh" ? White : Yellow);
+        _text.Draw(Overlay, "Host a game", MenuLayouts.LobbyHostX, MenuLayouts.LobbyButtonY + 2, focused == MenuId.Host ? White : Yellow);
+        _text.Draw(Overlay, "Refresh", MenuLayouts.LobbyRefreshX, MenuLayouts.LobbyButtonY + 2, focused == MenuId.Refresh ? White : Yellow);
 
         _text.Draw(Overlay, "Team", MenuLayouts.LobbyTeamX - 50, MenuLayouts.LobbyButtonY + 2, Grey);
-        Panel(MenuLayouts.LobbyTeamX, MenuLayouts.LobbyButtonY, MenuLayouts.LobbyTeamWidth, lobby.ValueText("team"), centered: true, highlighted: focused == "team");
+        Panel(MenuLayouts.LobbyTeamX, MenuLayouts.LobbyButtonY, MenuLayouts.LobbyTeamWidth, lobby.ValueText(MenuId.Team), centered: true, highlighted: focused == MenuId.Team);
         _text.Draw(Overlay, "Handicap", MenuLayouts.LobbyHandicapX - 90, MenuLayouts.LobbyButtonY + 2, Grey);
-        Panel(MenuLayouts.LobbyHandicapX, MenuLayouts.LobbyButtonY, MenuLayouts.LobbyHandicapWidth, lobby.ValueText("handicap"), centered: true, highlighted: focused == "handicap");
+        Panel(MenuLayouts.LobbyHandicapX, MenuLayouts.LobbyButtonY, MenuLayouts.LobbyHandicapWidth, lobby.ValueText(MenuId.Handicap), centered: true, highlighted: focused == MenuId.Handicap);
 
         _text.Draw(Overlay, "Address", MenuLayouts.LobbyHostX, MenuLayouts.LobbyAddressY + 2, Grey);
         Panel(MenuLayouts.LobbyFieldX, MenuLayouts.LobbyAddressY, MenuLayouts.LobbyAddressWidth,
-            Caret(lobby.FieldText("address"), caretOn), centered: false, highlighted: focused == "address");
-        _text.Draw(Overlay, "Join", MenuLayouts.LobbyJoinX, MenuLayouts.LobbyAddressY + 2, focused == "join" ? White : Yellow);
-        _text.Draw(Overlay, "Find on LAN", MenuLayouts.LobbyLanX, MenuLayouts.LobbyAddressY + 2, focused == "lan" ? White : Yellow);
+            Caret(lobby.FieldText(MenuId.Address), caretOn), centered: false, highlighted: focused == MenuId.Address);
+        _text.Draw(Overlay, "Join", MenuLayouts.LobbyJoinX, MenuLayouts.LobbyAddressY + 2, focused == MenuId.Join ? White : Yellow);
+        _text.Draw(Overlay, "Find on LAN", MenuLayouts.LobbyLanX, MenuLayouts.LobbyAddressY + 2, focused == MenuId.FindOnLan ? White : Yellow);
 
         _text.Draw(Overlay, "Game list", MenuLayouts.LobbyHostX, MenuLayouts.LobbyServerY + 2, Grey);
         Panel(MenuLayouts.LobbyFieldX, MenuLayouts.LobbyServerY, MenuLayouts.LobbyServerWidth,
-            Caret(lobby.FieldText("server"), caretOn), centered: false, highlighted: focused == "server");
+            Caret(lobby.FieldText(MenuId.ListServer), caretOn), centered: false, highlighted: focused == MenuId.ListServer);
 
         _text.Draw(Overlay, "Rules", MenuLayouts.LobbyHostX - 0, MenuLayouts.LobbyRulesY - 14, Grey);
         _text.Draw(Overlay, "Survivor", MenuLayouts.LobbyHostX, MenuLayouts.LobbyRulesY + 2, Grey);
-        Panel(105, MenuLayouts.LobbyRulesY, 50, lobby.ValueText("survivor"), centered: true, highlighted: focused == "survivor");
+        Panel(105, MenuLayouts.LobbyRulesY, 50, lobby.ValueText(MenuId.Survivor), centered: true, highlighted: focused == MenuId.Survivor);
         _text.Draw(Overlay, "End", 170, MenuLayouts.LobbyRulesY + 2, Grey);
-        Panel(205, MenuLayouts.LobbyRulesY, 90, lobby.ValueText("end"), centered: true, highlighted: focused == "end");
-        Panel(300, MenuLayouts.LobbyRulesY, 50, lobby.ValueText("endvalue"), centered: true, highlighted: focused == "endvalue");
+        Panel(205, MenuLayouts.LobbyRulesY, 90, lobby.ValueText(MenuId.GameEnd), centered: true, highlighted: focused == MenuId.GameEnd);
+        Panel(300, MenuLayouts.LobbyRulesY, 50, lobby.ValueText(MenuId.GameEndValue), centered: true, highlighted: focused == MenuId.GameEndValue);
         _text.Draw(Overlay, "Combo", 365, MenuLayouts.LobbyRulesY + 2, Grey);
-        Panel(420, MenuLayouts.LobbyRulesY, 40, lobby.ValueText("combo"), centered: true, highlighted: focused == "combo");
+        Panel(420, MenuLayouts.LobbyRulesY, 40, lobby.ValueText(MenuId.MinimumCombo), centered: true, highlighted: focused == MenuId.MinimumCombo);
 
         _text.Draw(Overlay, lobby.Status, MenuLayouts.LobbyHostX, MenuLayouts.LobbyStatusY, Grey);
-        BackButton(flow, focused == "back");
+        BackButton(flow, focused == MenuId.Back);
     }
 
     private static string Caret(string value, bool caretOn) => !caretOn && value.EndsWith('_') ? value[..^1] : value;

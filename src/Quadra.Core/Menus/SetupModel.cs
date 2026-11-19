@@ -37,13 +37,13 @@ public sealed class SetupModel
 
     private static readonly Dictionary<string, GameAction> KeyItems = new()
     {
-        ["key.left"] = GameAction.Left,
-        ["key.right"] = GameAction.Right,
-        ["key.down"] = GameAction.Down,
-        ["key.drop"] = GameAction.Drop,
-        ["key.rotatecw"] = GameAction.RotateRight,
-        ["key.rotateccw"] = GameAction.RotateLeft,
-        ["key.twice"] = GameAction.RotateTwice,
+        [MenuId.KeyLeft] = GameAction.Left,
+        [MenuId.KeyRight] = GameAction.Right,
+        [MenuId.KeyDown] = GameAction.Down,
+        [MenuId.KeyDrop] = GameAction.Drop,
+        [MenuId.KeyRotateClockwise] = GameAction.RotateRight,
+        [MenuId.KeyRotateCounterClockwise] = GameAction.RotateLeft,
+        [MenuId.KeyRotateTwice] = GameAction.RotateTwice,
     };
 
     private readonly GameSettings _settings;
@@ -74,14 +74,14 @@ public sealed class SetupModel
     {
         switch (id)
         {
-            case "player": return (_settings.SetupPlayer + 1).ToString();
-            case "name": return Player.Name + (Mode == SetupMode.EditingName ? "_" : "");
-            case "password": return new string('*', Player.Password.Length) + (Mode == SetupMode.EditingPassword ? "_" : "");
-            case "shadow": return YesNo(Player.Shadow);
-            case "smooth": return YesNo(Player.Smooth);
-            case "continuous": return YesNo(Player.ContinuousDown);
-            case "hspeed": return Speed(Player.HorizontalSpeed);
-            case "vspeed": return Speed(Player.VerticalSpeed);
+            case MenuId.Player: return (_settings.SetupPlayer + 1).ToString();
+            case MenuId.Name: return Player.Name + (Mode == SetupMode.EditingName ? "_" : "");
+            case MenuId.Password: return new string('*', Player.Password.Length) + (Mode == SetupMode.EditingPassword ? "_" : "");
+            case MenuId.Shadow: return YesNo(Player.Shadow);
+            case MenuId.Smooth: return YesNo(Player.Smooth);
+            case MenuId.ContinuousDown: return YesNo(Player.ContinuousDown);
+            case MenuId.HorizontalSpeed: return Speed(Player.HorizontalSpeed);
+            case MenuId.VerticalSpeed: return Speed(Player.VerticalSpeed);
         }
         if (KeyItems.TryGetValue(id, out var action))
             return Mode == SetupMode.CapturingKey && CaptureAction == action
@@ -98,13 +98,13 @@ public sealed class SetupModel
 
         switch (id)
         {
-            case "name":
+            case MenuId.Name:
                 Mode = SetupMode.EditingName;
                 return true;
-            case "password":
+            case MenuId.Password:
                 Mode = SetupMode.EditingPassword;
                 return true;
-            case "allkeys":
+            case MenuId.AllKeys:
                 _allKeysStep = 0;
                 BeginCapture(AllKeysOrder[0].Action, AllKeysOrder[0].Prompt);
                 return true;
@@ -122,14 +122,14 @@ public sealed class SetupModel
     {
         switch (id)
         {
-            case "player":
+            case MenuId.Player:
                 _settings.SetupPlayer = ((_settings.SetupPlayer + direction) % GameSettings.PlayerCount + GameSettings.PlayerCount) % GameSettings.PlayerCount;
                 return true;
-            case "shadow": Player.Shadow = !Player.Shadow; return true;
-            case "smooth": Player.Smooth = !Player.Smooth; return true;
-            case "continuous": Player.ContinuousDown = !Player.ContinuousDown; return true;
-            case "hspeed": Player.HorizontalSpeed = Wrap(Player.HorizontalSpeed + direction); return true;
-            case "vspeed": Player.VerticalSpeed = Wrap(Player.VerticalSpeed + direction); return true;
+            case MenuId.Shadow: Player.Shadow = !Player.Shadow; return true;
+            case MenuId.Smooth: Player.Smooth = !Player.Smooth; return true;
+            case MenuId.ContinuousDown: Player.ContinuousDown = !Player.ContinuousDown; return true;
+            case MenuId.HorizontalSpeed: Player.HorizontalSpeed = Wrap(Player.HorizontalSpeed + direction); return true;
+            case MenuId.VerticalSpeed: Player.VerticalSpeed = Wrap(Player.VerticalSpeed + direction); return true;
         }
         return false;
     }
