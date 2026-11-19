@@ -78,7 +78,7 @@ internal sealed class LocalNetwork
 
 public class NetworkGameTests
 {
-    private static string DemoDir()
+    internal static string DemoDir()
     {
         for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
         {

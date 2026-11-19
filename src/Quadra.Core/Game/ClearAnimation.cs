@@ -5,6 +5,9 @@ namespace Quadra.Core.Game;
 /// <summary>The frames of a line-clear animation, shared by single-player and network games.</summary>
 public static class ClearAnimation
 {
+    /// <summary>How many frames one pass of a clear takes on screen: the flash, the fall and the line check after it.</summary>
+    public static int PassFrames(ClearPass pass) => 21 + 2 * pass.FallSteps.Count;
+
     /// <summary>
     /// Lays out, frame by frame, what the original shows after a landing: each step of the clear flashes
     /// its rows for 17 frames, then loose cells fall one row every other frame. Frame counts follow

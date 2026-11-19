@@ -440,7 +440,8 @@ What is not the recorded result, and why: in demo01 (and probably demo03, which 
 from the recording. The clients agree with each other; the difference is the order in which garbage from
 *different attackers* reaches one victim, which the recording shows differently from the arrival order the
 clients use. In the original a clear sends its garbage when its clear animation ends on the victim's
-machine, so the order depends on animation timing; headless clients do not model it, a client with a screen will.
+machine, so the order depends on animation timing; since the thirteenth step the clients model that delay, but the
+timed replay still does not match the recording (see there).
 
 What is not done:
 
@@ -540,11 +541,25 @@ last round; the animation itself is the single-player code, which was checked on
   still apply when hosting from the command line. Tested in `LobbyTests`. Not looked at on screen: the window
   would not open in this session, so the positions of the new row (y 426, status moved to y 458) are unchecked.
 
+### Garbage timing (thirteenth step)
+
+- In the original a victim's machine sends an attack when its own copy of the attacker's board finishes the clear
+  (`Canvas::give_line` runs after the last `Player_check_line`), not when the stamp arrives. `GameClient` now holds
+  the garbage for the frames the attacker's clear takes (`ClearAnimation.PassFrames` per pass, the passes of one
+  attacker one after the other) once the game has started. Every client's copy of the game records the passes
+  (`MultiplayerState.RecordClears`). Tested in `GarbageTimingTests`.
+- Checked against the demos: for each recorded `Lines` packet the time since the attacker's stamp was always at
+  least what the model gives, by 10 to 60 frames in demo00 and demo01 (the rest is network lag, the host's frame and
+  queued stamps). So the model is a floor, not an exact match, and a timed replay of the demos does not
+  reproduce the recorded totals for demo00, 01 and 03: when two attackers' garbage reaches a victim in a
+  different order depends on each machine's lag, which headless clients do not have. The untimed replays
+  (every machine agrees; demo00 and demo02 exact) are unchanged.
+
 ## Suggested next steps
 
 1. Play the client and tune the feel: sound balance, speed per level, key timing, menu use.
 2. More round management on the host: rejoining, lag and idle limits, admin commands; a menu for the game's rules (end condition,
-   survivor, combo minimum); timing the garbage like the original (attacks when the attacker's clear animation ends).
+   survivor, combo minimum).
 3. Try the host and client against the C++ game to see whether they talk to each other.
 4. Late join (`Download`) and the rest of the list under "not done".
 5. Smaller gaps: the 5-minute sprint game, high score playback and posting to the shared table, the demo

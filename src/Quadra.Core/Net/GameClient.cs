@@ -42,6 +42,13 @@ public sealed class GameClient
 
     private readonly Queue<RoundState> _syncPoints = new();
 
+    // Garbage this machine's players owe, waiting for the attacker's clear animation to end (it is sent
+    // when the attacker's copy of the board finishes clearing, Canvas::give_line), and when each attacker's
+    // animation is free for the next stamp.
+    private readonly Queue<(long Due, Packet Packet)> _delayed = new();
+    private readonly Dictionary<byte, long> _animationEnds = [];
+    private long _frame;
+
     /// <summary>The round change the player acts on (survivor games); moved on by <see cref="NextSyncPoint"/>.</summary>
     public RoundState SyncPoint { get; private set; } = RoundState.Last;
 
@@ -82,6 +89,11 @@ public sealed class GameClient
     /// <summary>Advances the start countdown by one frame; keep it in step with the host's.</summary>
     public void Tick()
     {
+        if (!Paused)
+            _frame++;
+        while (_delayed.Count > 0 && _delayed.Peek().Due <= _frame)
+            Do(_delayed.Dequeue().Packet);
+
         if (DelayStart is > 0 and not GameHost.WaitingForStart && --DelayStart == 0)
             Paused = false;
     }
@@ -109,7 +121,7 @@ public sealed class GameClient
         switch (packet)
         {
             case GameServerPacket gs:
-                State = new MultiplayerState(gs);
+                State = new MultiplayerState(gs) { RecordClears = true };
                 State.Stamped += SendAttacks;
                 foreach (var p in gs.Players)
                     State.Apply(new PlayerPacket
@@ -166,21 +178,44 @@ public sealed class GameClient
     {
         if (State is null)
             return;
+        // The attack of each move leaves when its last pass has been played out.
+        var passes = attacker.Sim.LastClear;
+        long start = Math.Max(_frame, _animationEnds.GetValueOrDefault(attacker.Slot));
+        long due = start;
+        int pass = 0;
         foreach (var clear in result.Clears)
-            foreach (var attack in AttackRules.For(clear, State.Rules.ComboMin))
-                foreach (byte slot in _local.OrderBy(s => s))
+        {
+            for (int i = 0; i < clear.Combo && pass < passes.Count; i++, pass++)
+                due += ClearAnimation.PassFrames(passes[pass]);
+            _animationEnds[attacker.Slot] = due;
+            SendAttack(attacker, result, clear, due);
+        }
+    }
+
+    private void SendAttack(RemotePlayer attacker, StampResult result, ClearEvent clear, long due)
+    {
+        foreach (var attack in AttackRules.For(clear, State!.Rules.ComboMin))
+            foreach (byte slot in _local.OrderBy(s => s))
+            {
+                if (!State.Players.TryGetValue(slot, out var victim) || victim.Team == attacker.Team)
+                    continue;
+                var (count, combo) = AttackRules.ForReceiver(attack, attacker.Handicap, victim.Handicap);
+                if (count == 0)
+                    continue;
+                Enqueue(due, new LinesPacket
                 {
-                    if (!State.Players.TryGetValue(slot, out var victim) || victim.Team == attacker.Team)
-                        continue;
-                    var (count, combo) = AttackRules.ForReceiver(attack, attacker.Handicap, victim.Handicap);
-                    if (count == 0)
-                        continue;
-                    Do(new LinesPacket
-                    {
-                        Id = (byte)PacketType.ClientLines, Slot = slot, Nb = (byte)count, Nc = (byte)combo, Lx = (byte)result.LastColumn,
-                        Sender = attacker.Slot, Attack = new Attack(AttackType.Lines, 0), HolePos = new ushort[count],
-                    });
-                }
+                    Id = (byte)PacketType.ClientLines, Slot = slot, Nb = (byte)count, Nc = (byte)combo, Lx = (byte)result.LastColumn,
+                    Sender = attacker.Slot, Attack = new Attack(AttackType.Lines, 0), HolePos = new ushort[count],
+                });
+            }
+    }
+
+    private void Enqueue(long due, Packet packet)
+    {
+        if (due <= _frame || !Started)      // before the start nothing is animated, so nothing waits
+            Do(packet);
+        else
+            _delayed.Enqueue((due, packet));
     }
 
     // --- what a local player does

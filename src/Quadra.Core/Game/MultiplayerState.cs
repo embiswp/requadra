@@ -52,6 +52,9 @@ public sealed class MultiplayerState(GameServerPacket rules)
     /// <summary>Whether <see cref="MovesPacket"/>s drive the falling pieces. Stamps alone are enough for the figures.</summary>
     public bool PlayMoves { get; init; }
 
+    /// <summary>Keep the passes of every clear, so a client can time what the attack of a clear does (<see cref="PlayerSim.LastClear"/>).</summary>
+    public bool RecordClears { get; init; }
+
     /// <summary>Takes a player out of the game (they dropped or their connection ended).</summary>
     public void Remove(byte slot) => _players.Remove(slot);
 
@@ -67,8 +70,9 @@ public sealed class MultiplayerState(GameServerPacket rules)
         switch (packet)
         {
             case PlayerPacket p:
-                _players[p.Pos] = new RemotePlayer(p.Pos, p.Name, p.Team, p.Handicap,
-                    new PlayerSim(Rules.GameSeed, Rules.LevelStart, p.VRepeat, levelUp: !Rules.NoLevelUp), p.PlayerId, playerHash);
+                var sim = new PlayerSim(Rules.GameSeed, Rules.LevelStart, p.VRepeat, levelUp: !Rules.NoLevelUp);
+                sim.RecordClearAnimation = RecordClears;
+                _players[p.Pos] = new RemotePlayer(p.Pos, p.Name, p.Team, p.Handicap, sim, p.PlayerId, playerHash);
                 break;
             case MovesPacket m when PlayMoves && _players.TryGetValue(m.Slot, out var p):
                 foreach (byte frame in m.Moves)
