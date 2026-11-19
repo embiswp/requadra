@@ -77,6 +77,19 @@ public class QservServerTests
     }
 
     [Fact]
+    public void A_game_from_an_ipv6_address_is_listed_with_the_whole_address()
+    {
+        var (server, _) = Make();
+        server.Handle(Posted, "::1");
+
+        var modern = QservReply.Parse(server.Handle("getgames\ninfo/quadra_version 1.3.0\n", "9.9.9.9"));
+        Assert.NotNull(modern.Body.Sub("::1:3456"));
+
+        var old = QservReply.Parse(server.Handle("getgames\n", "9.9.9.9"));
+        Assert.NotNull(old.Body.Sub("::1"));
+    }
+
+    [Fact]
     public void The_server_decides_the_address_whatever_the_request_says()
     {
         var (server, _) = Make();

@@ -138,7 +138,10 @@ public sealed class TcpGameServer : IAsyncDisposable
     public TcpGameServer(GameHost host, IPAddress? address = null, int port = DefaultPort)
     {
         _host = host;
-        _listener = new TcpListener(address ?? IPAddress.Any, port);
+        // Without an address, take IPv4 and IPv6 alike: a list server on the same machine sees a player as ::1.
+        _listener = address is null && Socket.OSSupportsIPv6
+            ? new TcpListener(IPAddress.IPv6Any, port) { Server = { DualMode = true } }
+            : new TcpListener(address ?? IPAddress.Any, port);
     }
 
     /// <summary>The port in use; useful when started on port 0.</summary>

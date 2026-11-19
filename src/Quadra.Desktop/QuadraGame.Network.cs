@@ -115,7 +115,8 @@ public sealed partial class QuadraGame
         _view.ShowShadow = settings.Shadow;
         _view.SmoothMovement = settings.Smooth;
         _networkLevel = 0;
-        return new NetworkGame(client, slot, _controls.State, _controls.Reset(settings), settings.HorizontalSpeed, settings.ContinuousDown);
+        var bindings = _controls.Reset(settings);   // replaces State, so it must come before State is read
+        return new NetworkGame(client, slot, _controls.State, bindings, settings.HorizontalSpeed, settings.ContinuousDown);
     }
 
     private void UpdateNetwork(KeyboardState keyboard, GameTime gameTime)

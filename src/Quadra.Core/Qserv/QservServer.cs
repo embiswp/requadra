@@ -148,7 +148,7 @@ public sealed partial class QservServer
             else if (!snoop)
             {
                 // Old clients list games by host only, one per host.
-                key = game[..game.IndexOf(':')];
+                key = game[..game.LastIndexOf(':')];
             }
 
             if (sent.Add(key))

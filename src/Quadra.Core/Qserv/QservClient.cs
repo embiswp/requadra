@@ -69,7 +69,7 @@ public sealed class QservClient(HttpClient http, Uri endpoint, string version = 
         var games = new List<ListedGame>();
         foreach (var (key, node) in reply.Body.Nodes())
         {
-            int colon = key.IndexOf(':');
+            int colon = key.LastIndexOf(':');   // the address may be IPv6, which has colons of its own
             games.Add(new ListedGame(colon < 0 ? key : key[..colon], GameAnnouncement.FromTree(node)));
         }
         return games;

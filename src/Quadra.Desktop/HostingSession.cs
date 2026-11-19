@@ -15,7 +15,7 @@ internal sealed class HostingSession
     /// <summary>Starts listening on <paramref name="port"/>; throws <see cref="SocketException"/> if it cannot.</summary>
     public HostingSession(GameHost game, int port, Uri? listServer, HttpClient http)
     {
-        _server = new TcpGameServer(game, IPAddress.Any, port);
+        _server = new TcpGameServer(game, port: port);
         _server.Start();
         Port = _server.Port;
 

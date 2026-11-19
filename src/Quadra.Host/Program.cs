@@ -34,7 +34,7 @@ var host = new GameHost(new HostRules
 if (options.Record is not null)
     host.Recorder = new DemoRecorder(host.State.Rules);
 
-await using var server = new TcpGameServer(host, IPAddress.Any, options.Port);
+await using var server = new TcpGameServer(host, port: options.Port);
 server.Start();
 Console.WriteLine($"Hosting \"{options.Name}\" on port {server.Port} (seed {options.Seed}). Press Ctrl+C to stop.");
 
