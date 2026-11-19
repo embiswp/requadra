@@ -61,6 +61,12 @@ public static class PacketEncoder
                 w.WriteByte((byte)p.Moves.Length);
                 w.WriteBytes(p.Moves);
                 break;
+            case FindGamePacket:
+                w.WriteDword(Magic);
+                break;
+            case GameInfoPacket p:
+                WriteGameInfo(w, p);
+                break;
             case StatPacket p:
                 w.WriteByte(p.Slot);
                 w.WriteByte((byte)p.Stats.Count);
@@ -119,6 +125,42 @@ public static class PacketEncoder
     {
         w.WriteByte((byte)a.Type);
         w.WriteInt(a.Param);
+    }
+
+    /// <summary>What the UDP packets carry after their id, so that they are not taken for anything else (<c>'RMT3'</c>).</summary>
+    public const uint Magic = ('R' << 24) | ('M' << 16) | ('T' << 8) | '3';
+
+    private static void WriteGameInfo(NetWriter w, GameInfoPacket p)
+    {
+        w.WriteDword(Magic);
+        w.WriteString(p.Name, 32);
+        w.WriteByte(p.Version);
+        w.WriteInt(p.Port);
+        w.WriteByte((byte)p.Players.Count);
+        foreach (var player in p.Players)
+        {
+            w.WriteByte(player.Team);
+            w.WriteString(player.Name, 40);
+        }
+        w.WriteInt(p.GameEndValue);
+        w.WriteBool(p.NoLevelUp);
+        w.WriteBool(p.DelayStart);
+        w.WriteBool(p.Terminated);
+        w.WriteByte(p.LevelStart);
+        w.WriteByte(p.ComboMin);
+        w.WriteBool(p.Survivor);
+        w.WriteByte((byte)p.GameEnd);
+        foreach (var player in p.Players)
+            w.WriteInt(player.Handicap);
+        w.WriteBool(!p.AllowHandicap);      // reversed in the original so that an old host's missing byte reads as "allowed"
+        w.WriteBool(p.HotPotato);
+        if (p.Version >= 22)
+        {
+            WriteAttack(w, p.NormalAttack);
+            WriteAttack(w, p.CleanAttack);
+            WriteAttack(w, p.PotatoNormalAttack);
+            WriteAttack(w, p.PotatoCleanAttack);
+        }
     }
 
     private static void WriteDownload(NetWriter w, DownloadPacket p, int netVersion)

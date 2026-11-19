@@ -126,6 +126,41 @@ public sealed record MovesPacket(byte[] Moves) : PlayerPacketBase;
 
 public sealed record StatePacket(byte State) : PlayerPacketBase;
 
+/// <summary>A broadcast that asks hosts on the local network to describe their game (UDP, <c>Packet_findgame</c>).</summary>
+public sealed record FindGamePacket : Packet;
+
+/// <summary>A player as the UDP game description lists them.</summary>
+public readonly record struct GameInfoPlayer(byte Team, string Name, int Handicap);
+
+/// <summary>A host's answer to <see cref="FindGamePacket"/> (UDP, <c>Packet_gameinfo</c>).</summary>
+public sealed record GameInfoPacket : Packet
+{
+    public string Name { get; init; } = "";
+    public byte Version { get; init; }
+
+    /// <summary>The TCP port to join on.</summary>
+    public int Port { get; init; }
+
+    public IReadOnlyList<GameInfoPlayer> Players { get; init; } = [];
+    public int GameEndValue { get; init; }
+    public bool NoLevelUp { get; init; }
+
+    /// <summary>The game has not started yet: it is still waiting or counting down.</summary>
+    public bool DelayStart { get; init; }
+
+    public bool Terminated { get; init; }
+    public byte LevelStart { get; init; } = 1;
+    public byte ComboMin { get; init; }
+    public bool Survivor { get; init; }
+    public GameEnd GameEnd { get; init; }
+    public bool AllowHandicap { get; init; } = true;
+    public bool HotPotato { get; init; }
+    public Attack NormalAttack { get; init; }
+    public Attack CleanAttack { get; init; }
+    public Attack PotatoNormalAttack { get; init; }
+    public Attack PotatoCleanAttack { get; init; }
+}
+
 /// <summary>One counter of a <see cref="StatPacket"/> (<c>CS::Stat_type</c>).</summary>
 public readonly record struct StatValue(byte Stat, int Value)
 {

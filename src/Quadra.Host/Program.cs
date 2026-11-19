@@ -33,6 +33,16 @@ await using var server = new TcpGameServer(host, IPAddress.Any, options.Port);
 server.Start();
 Console.WriteLine($"Hosting \"{options.Name}\" on port {server.Port} (seed {options.Seed}). Press Ctrl+C to stop.");
 
+LanResponder? lan = null;
+try
+{
+    lan = new LanResponder(host, server.Port);
+}
+catch (System.Net.Sockets.SocketException e)
+{
+    Console.WriteLine($"Not answering searches on the local network: {e.Message}");
+}
+
 using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
 HostAnnouncer? announcer = options.List is null
     ? null
@@ -69,6 +79,7 @@ catch (OperationCanceledException)
 {
 }
 
+lan?.Dispose();
 if (announcer is not null)
     await announcer.DisposeAsync();
 return 0;

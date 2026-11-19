@@ -151,7 +151,7 @@ public static class MenuLayouts
     public const int LobbyListX = 40, LobbyListY = 84, LobbyListWidth = 560, LobbyRowStep = 22;
     public const int LobbyButtonY = 330, LobbyAddressY = 362, LobbyServerY = 394, LobbyRulesY = 426, LobbyStatusY = 458;
     public const int LobbyHostX = 40, LobbyHostWidth = 150, LobbyRefreshX = 220, LobbyRefreshWidth = 100;
-    public const int LobbyFieldX = 150, LobbyAddressWidth = 250, LobbyServerWidth = 450, LobbyJoinX = 420, LobbyJoinWidth = 60;
+    public const int LobbyFieldX = 150, LobbyAddressWidth = 250, LobbyServerWidth = 450, LobbyJoinX = 420, LobbyJoinWidth = 60, LobbyLanX = 500, LobbyLanWidth = 110;
 
     public const int LobbyTeamX = 400, LobbyTeamWidth = 60, LobbyHandicapX = 560, LobbyHandicapWidth = 50;
 
@@ -166,6 +166,7 @@ public static class MenuLayouts
         items.Add(new MenuItem("handicap", LobbyHandicapX, LobbyButtonY, LobbyHandicapWidth, 22));
         items.Add(new MenuItem("address", LobbyFieldX, LobbyAddressY, LobbyAddressWidth, 22));
         items.Add(new MenuItem("join", LobbyJoinX, LobbyAddressY, LobbyJoinWidth, 22));
+        items.Add(new MenuItem("lan", LobbyLanX, LobbyAddressY, LobbyLanWidth, 22));
         items.Add(new MenuItem("server", LobbyFieldX, LobbyServerY, LobbyServerWidth, 22));
         items.Add(new MenuItem("survivor", 105, LobbyRulesY, 50, 22));
         items.Add(new MenuItem("end", 205, LobbyRulesY, 90, 22));

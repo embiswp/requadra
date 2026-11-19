@@ -62,6 +62,16 @@ public sealed class AppFlow
         return request;
     }
 
+    private bool _lanRequested;
+
+    /// <summary>The player asked for games on the local network to be looked for. Cleared by reading.</summary>
+    public bool TakeLanRequest()
+    {
+        bool asked = _lanRequested;
+        _lanRequested = false;
+        return asked;
+    }
+
     /// <summary>The player asked for the game list to be fetched again. Cleared by reading.</summary>
     public bool TakeRefreshRequest()
     {
@@ -264,6 +274,10 @@ public sealed class AppFlow
             case "refresh":
                 _refreshRequested = true;
                 Lobby.Status = Lobby.ServerUrl.Length > 0 ? "Fetching the game list..." : "No game list server is set";
+                break;
+            case "lan":
+                _lanRequested = true;
+                Lobby.Status = "Looking for games on the local network...";
                 break;
             case "address" or "server": Lobby.BeginEdit(id); break;
             case "team" or "handicap" or "survivor" or "end" or "endvalue" or "combo":

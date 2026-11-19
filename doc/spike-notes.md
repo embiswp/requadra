@@ -569,6 +569,20 @@ last round; the animation itself is the single-player code, which was checked on
 - Tested in `LateJoinTests`: both packets round-trip, and a client that joins after 60 stamps of demo00 has the
   same boards, queue, garbage, counters and alive flags as the host. Not tried against the C++ client.
 
+### Finding games on the local network (fifteenth step)
+
+- As in the original (`Menu_multi_refresh::find_local_games`, `Net_server::findgame`): a client broadcasts a UDP
+  `FindGame` packet to the UDP port next to the game's TCP port (3457 for 3456), and each host answers the sender
+  with a `GameInfo` packet sent to that same port. Both carry the magic number `'RMT3'` after the id; anything
+  else on the port is ignored. `LanDiscovery.FindAsync` collects the answers for a while and returns them as
+  `ListedGame`s; `LanResponder` answers for a `GameHost`. `Quadra.Host` and the hosting window both answer, and
+  the lobby has a "Find on LAN" button (a search takes 1.5 seconds). The format follows `Packet_gameinfo`,
+  including the reversed allow-handicap flag and the attack settings from net version 22 on.
+- Tested over real UDP on the loopback address (`LanDiscoveryTests`). Not tried with the C++ client, and a real
+  broadcast across a network is untested. Only one game or search can use the UDP port on a machine at a time.
+- The list from a search has no player scores or states (the UDP packet does not carry them): players show with
+  their teams and handicaps only.
+
 ## Suggested next steps
 
 1. Play the client and tune the feel: sound balance, speed per level, key timing, menu use.

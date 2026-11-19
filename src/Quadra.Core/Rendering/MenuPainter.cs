@@ -139,6 +139,7 @@ public sealed class MenuPainter
         Panel(MenuLayouts.LobbyFieldX, MenuLayouts.LobbyAddressY, MenuLayouts.LobbyAddressWidth,
             Caret(lobby.FieldText("address"), caretOn), centered: false, highlighted: focused == "address");
         _text.Draw(Overlay, "Join", MenuLayouts.LobbyJoinX, MenuLayouts.LobbyAddressY + 2, focused == "join" ? White : Yellow);
+        _text.Draw(Overlay, "Find on LAN", MenuLayouts.LobbyLanX, MenuLayouts.LobbyAddressY + 2, focused == "lan" ? White : Yellow);
 
         _text.Draw(Overlay, "Game list", MenuLayouts.LobbyHostX, MenuLayouts.LobbyServerY + 2, Grey);
         Panel(MenuLayouts.LobbyFieldX, MenuLayouts.LobbyServerY, MenuLayouts.LobbyServerWidth,

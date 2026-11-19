@@ -183,4 +183,18 @@ public class LobbyTests
         flow.Cycle("end", -1);
         Assert.Equal("never", flow.Lobby.ValueText("end"));
     }
+
+    [Fact]
+    public void Find_on_lan_asks_for_a_search_of_the_local_network()
+    {
+        var flow = MenuFixtures.NewFlow();
+        flow.Show(Screen.Lobby);
+        Assert.False(flow.TakeLanRequest());
+
+        flow.Activate("lan");
+
+        Assert.True(flow.TakeLanRequest());
+        Assert.False(flow.TakeLanRequest());
+        Assert.Contains("local network", flow.Lobby.Status);
+    }
 }

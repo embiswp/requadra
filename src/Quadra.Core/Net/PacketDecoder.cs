@@ -31,6 +31,8 @@ public static class PacketDecoder
             PacketType.Lines or PacketType.ClientLines => ReadLines(r),
             PacketType.Moves or PacketType.ClientMoves => ReadPlayerBase(r, s => ReadMoves(r, s)),
             PacketType.State or PacketType.ClientState or PacketType.ServerState => ReadPlayerBase(r, s => new StatePacket(r.ReadByte()) { Slot = s }),
+            PacketType.FindGame => ReadFindGame(r),
+            PacketType.GameInfo => ReadGameInfo(r),
             PacketType.Stat => ReadPlayerBase(r, s => ReadStat(r, s)),
             PacketType.Download => ReadPlayerBase(r, s => ReadDownload(r, s)),
             PacketType.WantJoin => ReadWantJoin(r),
@@ -200,6 +202,70 @@ public static class PacketDecoder
         {
             Uid = uid, Team = team, Name = name, Player = player, HRepeat = hRepeat, VRepeat = vRepeat,
             Smooth = smooth, Shadow = shadow, Pos = pos, Handicap = handicap, PlayerId = playerId,
+        };
+    }
+
+    private static void CheckMagic(NetReader r)
+    {
+        if (r.ReadDword() != PacketEncoder.Magic)
+            throw new InvalidDataException("A UDP packet does not carry the game's magic number.");
+    }
+
+    private static FindGamePacket ReadFindGame(NetReader r)
+    {
+        CheckMagic(r);
+        return new FindGamePacket();
+    }
+
+    private static GameInfoPacket ReadGameInfo(NetReader r)
+    {
+        CheckMagic(r);
+        string name = r.ReadString(32, out bool ok);
+        byte version = r.ReadByte();
+        int port = r.ReadInt();
+        int count = r.ReadByte();
+        if (!ok || count > MaxPlayers)
+            throw new InvalidDataException("A game description is malformed.");
+        var teams = new byte[count];
+        var names = new string[count];
+        for (int i = 0; i < count; i++)
+        {
+            teams[i] = r.ReadByte();
+            names[i] = r.ReadString(40, out _);
+            if (teams[i] >= MaxTeams)
+                throw new InvalidDataException("A game description has a team out of range.");
+        }
+        int endValue = r.ReadInt();
+        bool noLevelUp = r.ReadBool(), delayStart = r.ReadBool(), terminated = r.ReadBool();
+        byte levelStart = r.ReadByte(), comboMin = r.ReadByte();
+        bool survivor = r.ReadBool();
+        byte end = r.ReadByte();
+        if (levelStart > 10 || comboMin > 10 || end > 4)
+            throw new InvalidDataException("A game description has a rule out of range.");
+        var players = new GameInfoPlayer[count];
+        for (int i = 0; i < count; i++)
+        {
+            int handicap = r.ReadInt();
+            if (handicap is < 0 or > 4)
+                throw new InvalidDataException("A game description has a handicap out of range.");
+            players[i] = new GameInfoPlayer(teams[i], names[i], handicap);
+        }
+        bool allowHandicap = !r.ReadBool();
+        bool hotPotato = r.ReadBool();
+        Attack normal = default, clean = default, potatoNormal = default, potatoClean = default;
+        if (version >= 22)
+        {
+            normal = ReadAttack(r);
+            clean = ReadAttack(r);
+            potatoNormal = ReadAttack(r);
+            potatoClean = ReadAttack(r);
+        }
+        return new GameInfoPacket
+        {
+            Name = name, Version = version, Port = port, Players = players, GameEndValue = endValue, NoLevelUp = noLevelUp,
+            DelayStart = delayStart, Terminated = terminated, LevelStart = levelStart, ComboMin = comboMin, Survivor = survivor,
+            GameEnd = (GameEnd)end, AllowHandicap = allowHandicap, HotPotato = hotPotato,
+            NormalAttack = normal, CleanAttack = clean, PotatoNormalAttack = potatoNormal, PotatoCleanAttack = potatoClean,
         };
     }
 

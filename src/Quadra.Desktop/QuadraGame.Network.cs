@@ -22,6 +22,7 @@ public sealed partial class QuadraGame
     private enum NetworkStage { Connecting, Joining, Waiting, Playing, Failed }
 
     private TcpGameServer? _server;
+    private LanResponder? _lan;
     private TcpGameLink? _network;
     private Task<TcpGameLink>? _connecting;
     private NetworkGame? _netGame;
@@ -65,6 +66,14 @@ public sealed partial class QuadraGame
             port = _server.Port;
             host = "127.0.0.1";
             AnnounceHost(gameHost, port);
+            try
+            {
+                _lan = new LanResponder(gameHost, port);
+            }
+            catch (System.Net.Sockets.SocketException)
+            {
+                _lan = null;       // the UDP port is taken (a second game on this machine): only the list server will show it
+            }
         }
 
         _networkActive = true;
@@ -102,7 +111,7 @@ public sealed partial class QuadraGame
         {
             _listing = null;
             if (done.IsFaulted)
-                _flow.Lobby.Status = "Could not fetch the list: " + done.Exception!.GetBaseException().Message;
+                _flow.Lobby.Status = "Could not fetch the list: " + done.Exception!.GetBaseException().Message;   // (also a failed LAN search)
             else if (done.IsCompletedSuccessfully)
                 _flow.SetLobbyGames(done.Result);
         }
@@ -113,12 +122,17 @@ public sealed partial class QuadraGame
         else if (_flow.Lobby.ServerUrl.Length > 0 && !Uri.TryCreate(_settings.ListServer, UriKind.Absolute, out _))
             _flow.Lobby.Status = "The game list address is not a URL";
 
+        if (_flow.TakeLanRequest() && _listing is null)
+            _listing = LanDiscovery.FindAsync(LanDiscovery.UdpPort(TcpGameServer.DefaultPort), TimeSpan.FromSeconds(1.5));
+
         if (_flow.TakeNetworkRequest() is { } request)
             StartNetwork(request, fromMenu: true);
     }
 
     private void StopNetwork()
     {
+        _lan?.Dispose();
+        _lan = null;
         _announcer?.DisposeAsync().AsTask().Wait(3000);
         _announcer = null;
         _netGame = null;
