@@ -1,0 +1,39 @@
+{
+  "name": "Quadra (Android, x86-64)",
+  "build": { "dockerfile": "Dockerfile", "options": ["--platform=linux/amd64"] },
+  // Google's AAPT2 (the Android resource compiler) only exists for x86-64 Linux, so on an ARM machine such
+  // as an Apple-silicon Mac this container runs emulated. Use the other dev container for everything else.
+  "runArgs": ["--platform=linux/amd64"],
+
+  "features": {
+    "ghcr.io/devcontainers/features/dotnet:2": { "version": "11.0", "additionalVersions": "8.0" },
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/anthropics/devcontainer-features/claude-code:1": {}
+  },
+
+  "containerEnv": {
+    "DOTNET_CLI_TELEMETRY_OPTOUT": "1",
+    "DOTNET_NOLOGO": "1"
+  },
+
+  "mounts": [
+    "source=quadra-claude-config,target=/home/vscode/.claude,type=volume"
+  ],
+
+  "postCreateCommand": "sudo chown -R vscode:vscode /home/vscode/.claude && sudo env HOME=/root \"PATH=$PATH\" dotnet workload install android && dotnet restore Quadra.slnx",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-dotnettools.csdevkit",
+        "ms-dotnettools.csharp",
+        "anthropic.claude-code",
+        "editorconfig.editorconfig"
+      ],
+      "settings": {
+        "dotnet.defaultSolution": "Quadra.slnx",
+        "files.exclude": { "**/bin": true, "**/obj": true }
+      }
+    }
+  }
+}

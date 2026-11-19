@@ -72,15 +72,21 @@ shell around it.
 - **Packaging:** a signed app bundle, an app icon and a minimum Android version, probably 8 or newer.
 - **Continuous integration:** an Android build job.
 
-## Decisions needed
+## Decisions (made)
 
-1. **Orientation:** landscape only, or portrait too? Portrait means a new layout and is the most work.
-2. **Controls:** buttons first, then gestures later?
-3. **Scope:** does the first version include multiplayer, or only single-player plus joining?
-4. **Distribution:** sideloading for personal use, or Google Play?
-
-Decision 4 matters most, because the art and sound licence (Ludus Design copyright, no separate statement)
-is still unconfirmed. For a Play Store release treat that as a blocker and ask the upstream authors first.
+1. **Orientation:** landscape only. The playfield is in the middle, the controls are at the sides. Portrait
+   would not fit the 640×480 layout.
+2. **Controls:** on-screen buttons. Left, right, down and rotate (up) as a cross on the right; a drop button
+   on the left of the playfield; a small rotate-twice button. A setting to swap the sides can come later.
+   Gestures may follow once the buttons feel right.
+3. **Scope:** single-player plus joining games. No hosting on the phone.
+4. **Distribution:** sideloading for now. Google Play stays blocked until the art and sound licence (Ludus
+   Design copyright, no separate statement) is confirmed with the upstream authors.
+5. **Game list server:** reached over HTTPS, hosted somewhere by the owner. Its URL is a setting in the app,
+   as on the desktop.
+6. **Minimum Android version:** 8.
+7. **Multiplayer screen:** decide after the first build runs on a device.
+8. **Tools:** the .NET Android workload, a JDK and the Android SDK go into the dev container.
 
 ## Order and effort
 

@@ -19,3 +19,21 @@ Limits of a container:
 - **LAN search:** it uses UDP broadcast, which does not cross Docker's network. Join by address instead
   (forward TCP 3456 from the container, or use the host's address).
 - **Speed:** the window is drawn by software, so it is slower than on a real machine.
+
+## Android
+
+A second container, **Quadra (Android, x86-64)**, has what the Android app needs: JDK 17, the Android SDK
+(platform 37, build tools, `adb`) and the .NET Android workload. Choose it when VS Code asks which
+configuration to open, or run **Dev Containers: Reopen in Container** again to switch.
+
+```
+dotnet build src/Quadra.Android          # builds bin/Debug/net11.0-android/org.quadra.game-Signed.apk
+```
+
+- **Why a separate container:** Google's resource compiler (AAPT2) only exists for x86-64 Linux. On an ARM
+  machine such as an Apple-silicon Mac the container therefore runs emulated, which is slower, so the
+  main container stays native for everything else.
+- **No game window, no emulator:** it builds the app. Install the APK on a phone with `adb` (the phone's USB
+  debugging, or wireless debugging with `adb pair` / `adb connect`), or copy the file over and sideload it.
+- **Not in `Quadra.slnx`:** the Android project needs the workload, so a plain `dotnet build` of the solution
+  skips it.
