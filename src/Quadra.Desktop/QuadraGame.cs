@@ -34,6 +34,7 @@ public sealed partial class QuadraGame : Game
     private SinglePlayerView _view = null!;
     private MenuPainter _menus = null!;
     private GameSounds _sounds = null!;
+    private MenuInput _menuInput = null!;
     private ScriptedInput? _script;
     private RenderTarget2D _screen = null!;      // the original's 640 x 480, scaled to the window
     private Texture2D _overlay = null!;          // painted board and texts, or the menu controls
@@ -44,7 +45,6 @@ public sealed partial class QuadraGame : Game
     private KeyboardState _previousKeys;
     private MouseState _previousMouse;
     private Screen _shownScreen = Screen.Main;
-    private int _hoveredItem = -1;
 
     // The game in progress.
     private SinglePlayerGame? _game;
@@ -106,6 +106,7 @@ public sealed partial class QuadraGame : Game
         _view = new SinglePlayerView(_assets.TextFont, _assets.NumberFont, _flow.Text) { LevelUpBanner = _assets.LevelUpBanner };
         _menus = new MenuPainter(_assets.TextFont, _assets.NumberFont, _assets.Sprite);
         _sounds = new GameSounds(_assets, new SoundCues(new Random(), _assets.SampleRate));
+        _menuInput = new MenuInput(_flow, _sounds);
         _screen = new RenderTarget2D(GraphicsDevice, SinglePlayerView.ScreenWidth, SinglePlayerView.ScreenHeight);
         _overlay = new Texture2D(GraphicsDevice, SinglePlayerView.ScreenWidth, SinglePlayerView.ScreenHeight);
         _pauseSign = _assets.ToTexture(_assets.PauseBanner);
@@ -150,7 +151,7 @@ public sealed partial class QuadraGame : Game
         else if (_flow.Current == Screen.Playing)
             UpdatePlaying(keyboard, gameTime);
         else
-            UpdateMenu(keyboard, mouse);
+            _menuInput.Update(keyboard, _previousKeys, mouse, _previousMouse, Fit.ToPicture(mouse.X, mouse.Y));
 
         if (_flow.Current == Screen.Lobby && !NetworkActive)
             UpdateLobby();
@@ -181,102 +182,13 @@ public sealed partial class QuadraGame : Game
     {
         var previous = _shownScreen;
         _shownScreen = _flow.Current;
-        _hoveredItem = -1;
+        _menuInput.ScreenChanged();
         if (_flow.Current == Screen.Playing)
             StartGame();
         else if (previous == Screen.Playing)
             _game = null;
         if (_flow.Current == Screen.HighScores && _flow.HighlightedRank >= 0)
             _sounds.NewHighScore();
-    }
-
-    private void UpdateMenu(KeyboardState keyboard, MouseState mouse)
-    {
-        var menu = _flow.Menu;
-        var setup = _flow.Current == Screen.Setup ? _flow.Setup : null;
-
-        // Pointer: hovering focuses (with a sound), a click activates.
-        var point = Fit.ToPicture(mouse.X, mouse.Y);
-        if (mouse.X != _previousMouse.X || mouse.Y != _previousMouse.Y)
-        {
-            menu.PointerMoved(point.X, point.Y);
-            if (menu.Focus != _hoveredItem)
-            {
-                _hoveredItem = menu.Focus;
-                if (menu.Focus >= 0)
-                    _sounds.MenuHover();
-            }
-        }
-        if (mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released
-            && menu.PointerPressed(point.X, point.Y) is { } clicked)
-            ChooseMenuItem(clicked);
-
-        // Keyboard.
-        if (setup is { Mode: SetupMode.CapturingKey })
-        {
-            foreach (var key in keyboard.GetPressedKeys().Where(k => !_previousKeys.IsKeyDown(k)))
-            {
-                setup.KeyPressed(key.ToString());
-                break;      // one key at a time
-            }
-            return;
-        }
-        if (setup is { Mode: SetupMode.EditingName or SetupMode.EditingPassword })
-        {
-            if (WasPressed(keyboard, Keys.Back))
-                setup.Backspace();
-            if (WasPressed(keyboard, Keys.Enter))
-                setup.Commit();
-            if (WasPressed(keyboard, Keys.Escape))
-                _flow.Back();
-            return;
-        }
-
-        if (_flow.Current == Screen.Lobby && _flow.Lobby.Edit != LobbyEdit.None)
-        {
-            if (WasPressed(keyboard, Keys.Back))
-                _flow.Lobby.Backspace();
-            if (WasPressed(keyboard, Keys.Enter))
-                _flow.Back();       // Enter and Escape both end the typing; the text stays
-            if (WasPressed(keyboard, Keys.Escape))
-                _flow.Back();
-            return;
-        }
-
-        if (WasPressed(keyboard, Keys.Down))
-            MoveMenuFocus(menu, 1);
-        if (WasPressed(keyboard, Keys.Up))
-            MoveMenuFocus(menu, -1);
-        if (menu.FocusedItem is { } focused)
-        {
-            if (WasPressed(keyboard, Keys.Left))
-                _flow.Cycle(focused.Id, -1);
-            if (WasPressed(keyboard, Keys.Right))
-                _flow.Cycle(focused.Id, 1);
-            if (WasPressed(keyboard, Keys.Enter) || WasPressed(keyboard, Keys.Space))
-                ChooseMenuItem(focused.Id);
-        }
-        if (WasPressed(keyboard, Keys.Escape))
-            _flow.Back();
-    }
-
-    private void MoveMenuFocus(MenuScreen menu, int direction)
-    {
-        menu.MoveFocus(direction);
-        _hoveredItem = menu.Focus;
-        _sounds.MenuHover();
-    }
-
-    /// <summary>Something was chosen: click sound (a tap sound for a value), then the flow decides.</summary>
-    private void ChooseMenuItem(string id)
-    {
-        bool isValue = _flow.Current == Screen.Setup && id is "player" or "shadow" or "smooth" or "hspeed" or "vspeed" or "continuous"
-                       || _flow.Current == Screen.Options && id == "language";
-        if (isValue)
-            _sounds.MenuValue();
-        else
-            _sounds.MenuClick();
-        _flow.Activate(id);
     }
 
     private void TypeChat(char c)
