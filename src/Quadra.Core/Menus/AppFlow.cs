@@ -28,6 +28,11 @@ public sealed class AppFlow
     private readonly Action _saveSettings;
     private readonly Action _saveScores;
 
+    // What the player asked for on the lobby screen; the front end carries it out and takes the request.
+    private NetworkRequest? _networkRequest;
+    private bool _gameListRequested;
+    private bool _lanSearchRequested;
+
     public AppFlow(GameSettings settings, HighScoreTable scores, MenuLayouts.ImageSize imageSize,
         Func<int, LegacyText> textForLanguage, Action saveSettings, Action saveScores)
     {
@@ -51,9 +56,6 @@ public sealed class AppFlow
     public SetupModel Setup { get; private set; }
     public LobbyModel Lobby { get; }
 
-    private NetworkRequest? _networkRequest;
-    private bool _refreshRequested;
-
     /// <summary>A network game the player chose (host or join); the front end starts it. Cleared by reading.</summary>
     public NetworkRequest? TakeNetworkRequest()
     {
@@ -62,21 +64,16 @@ public sealed class AppFlow
         return request;
     }
 
-    private bool _lanRequested;
-
     /// <summary>The player asked for games on the local network to be looked for. Cleared by reading.</summary>
-    public bool TakeLanRequest()
-    {
-        bool asked = _lanRequested;
-        _lanRequested = false;
-        return asked;
-    }
+    public bool TakeLanRequest() => Take(ref _lanSearchRequested);
 
     /// <summary>The player asked for the game list to be fetched again. Cleared by reading.</summary>
-    public bool TakeRefreshRequest()
+    public bool TakeRefreshRequest() => Take(ref _gameListRequested);
+
+    private static bool Take(ref bool request)
     {
-        bool asked = _refreshRequested;
-        _refreshRequested = false;
+        bool asked = request;
+        request = false;
         return asked;
     }
 
@@ -186,8 +183,7 @@ public sealed class AppFlow
         if (screen == Screen.Lobby)
         {
             Lobby.Commit();
-            _refreshRequested = Lobby.ServerUrl.Length > 0;
-            Lobby.Status = Lobby.ServerUrl.Length > 0 ? "Fetching the game list..." : "No game list server is set; join by address";
+            RequestGameList("No game list server is set; join by address");
         }
         Menu = screen switch
         {
@@ -272,11 +268,11 @@ public sealed class AppFlow
         {
             case "host": _networkRequest = new NetworkRequest(true, "127.0.0.1", LobbyModel.DefaultPort); break;
             case "refresh":
-                _refreshRequested = true;
-                Lobby.Status = Lobby.ServerUrl.Length > 0 ? "Fetching the game list..." : "No game list server is set";
+                _gameListRequested = true;
+                Lobby.Status = GameListStatus("No game list server is set");
                 break;
             case "lan":
-                _lanRequested = true;
+                _lanSearchRequested = true;
                 Lobby.Status = "Looking for games on the local network...";
                 break;
             case "address" or "server": Lobby.BeginEdit(id); break;
@@ -296,10 +292,17 @@ public sealed class AppFlow
     private void FinishLobbyEdit()
     {
         if (Lobby.Commit() == LobbyEdit.Server)
-        {
-            _refreshRequested = Lobby.ServerUrl.Length > 0;
-            Lobby.Status = Lobby.ServerUrl.Length > 0 ? "Fetching the game list..." : "No game list server is set";
-        }
+            RequestGameList("No game list server is set");
         _saveSettings();
     }
+
+    // Asks for the game list if a list server is set, and says what is happening either way.
+    private void RequestGameList(string noServerStatus)
+    {
+        _gameListRequested = Lobby.ServerUrl.Length > 0;
+        Lobby.Status = GameListStatus(noServerStatus);
+    }
+
+    private string GameListStatus(string noServerStatus) =>
+        Lobby.ServerUrl.Length > 0 ? "Fetching the game list..." : noServerStatus;
 }
