@@ -26,6 +26,7 @@ public sealed class NetworkGame
     public const int RespawnLockFrames = 100;
 
     private int _deadFrames;
+    private int _syncFrames;
 
     public NetworkGame(GameClient client, byte slot, KeyStates keys, KeyBindings bindings, int horizontalRepeat = 2, bool continuousDown = true)
     {
@@ -81,6 +82,9 @@ public sealed class NetworkGame
 
     public bool IsDead { get; private set; }
 
+    /// <summary>A survivor game: the dead (and the round's winners) wait for the host to start the next round.</summary>
+    public bool Survivor => State.Rules.Survivor;
+
     /// <summary>True from the first frame after the host's countdown has ended.</summary>
     public bool Started => _client.Started;
 
@@ -116,10 +120,21 @@ public sealed class NetworkGame
             return;
         _wasStarted = true;
 
+        // The host's round changes are picked up every few frames, one at a time, as in the original.
+        if (_syncFrames >= 5)
+        {
+            _client.NextSyncPoint();
+            _syncFrames = 0;
+        }
+        else
+            _syncFrames++;
+
         if (IsDead)
         {
             _deadFrames++;
-            if (_deadFrames > RespawnLockFrames && AnyKeyDown())
+            if (Survivor)
+                FollowRoundChange();
+            else if (_deadFrames > RespawnLockFrames && AnyKeyDown())
                 Respawn();
             return;
         }
@@ -137,6 +152,16 @@ public sealed class NetworkGame
         if (_pauseFramesLeft > 0)
         {
             _pauseFramesLeft--;
+            return;
+        }
+
+        if (Survivor && _client.SyncPoint is RoundState.WaitForWinner or RoundState.WaitForRestart)
+        {
+            // The round is over and this player is one of those left: step aside until everybody is ready.
+            _client.FirstFrag(Slot);
+            IsDead = true;
+            _deadFrames = 0;
+            _timeline.Clear();
             return;
         }
 
@@ -181,6 +206,15 @@ public sealed class NetworkGame
 
     private bool AnyKeyDown() =>
         Enum.GetValues<GameAction>().Any(action => Keys.Get(Bindings[action]) != KeyFlags.None);
+
+    // A survivor game restarts everybody together: wait for the winner, say so when the host asks, restart on its word.
+    private void FollowRoundChange()
+    {
+        if (Local.Round == RoundState.WaitForWinner && _client.SyncPoint == RoundState.WaitForRestart)
+            _client.SendState(Slot, RoundState.WaitForRestart);
+        else if (Local.Round == RoundState.WaitForRestart && _client.SyncPoint == RoundState.Playing)
+            Respawn();
+    }
 
     private void Respawn()
     {

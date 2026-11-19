@@ -53,6 +53,7 @@ public sealed record StartupOptions
 
     /// <summary>Frags, minutes, thousands of points or lines.</summary>
     public int GameEndValue { get; init; }
+    public bool Survivor { get; init; }
 
     public static StartupOptions Parse(string[] args)
     {
@@ -87,6 +88,7 @@ public sealed record StartupOptions
                 _ => Quadra.Core.Net.GameEnd.Never,
             },
             GameEndValue = int.TryParse(Array.IndexOf(args, "--end") is var e and >= 0 && e + 2 < args.Length ? args[e + 2] : null, out int endValue) ? endValue : 0,
+            Survivor = args.Contains("--survivor"),
             Language = int.TryParse(Value("--lang"), out int lang) ? lang : null,
         };
     }

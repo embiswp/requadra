@@ -105,6 +105,17 @@ public sealed class GameHost
     /// <summary>The team that won, or -1 when nobody scored.</summary>
     public int WinningTeam { get; private set; } = -1;
 
+    /// <summary>Where a survivor game is in its round change (<c>Net_list::syncpoint</c>); <see cref="RoundState.Last"/> while a round runs.</summary>
+    public RoundState SyncPoint { get; private set; } = RoundState.Last;
+
+    /// <summary>Rounds that have finished (survivor games).</summary>
+    public int Rounds { get; private set; }
+
+    /// <summary>Where the seed of a new survivor round comes from.</summary>
+    public Func<uint> NewSeed { get; set; } = () => (uint)Random.Shared.NextInt64(0, 1L << 32);
+
+    private bool _validFrag;
+
     public int PeerCount
     {
         get
@@ -175,7 +186,7 @@ public sealed class GameHost
             if (Started && !Paused && !Terminated)
             {
                 Frames++;
-                CheckEnd();
+                CheckEnd(CheckRound());
             }
         }
     }
@@ -184,10 +195,10 @@ public sealed class GameHost
     /// Ends the game when its condition is met (<c>Net_list::check_end_game</c>): the leading team has the
     /// goal or the time is up. If the two best teams are level, play goes on until one is ahead.
     /// </summary>
-    private void CheckEnd()
+    private void CheckEnd(bool roundEnded)
     {
         var end = Rules.GameEnd;
-        if (end == GameEnd.Never || (end == GameEnd.Frag && Rules.GameEndValue <= 0))
+        if (!roundEnded || end == GameEnd.Never || (end == GameEnd.Frag && Rules.GameEndValue <= 0))
             return;
 
         var totals = GameGoals.TeamTotals(State, end);
@@ -202,6 +213,66 @@ public sealed class GameHost
         WinningTeam = leader;
         Dispatch(new EndGamePacket(true) { Id = (byte)PacketType.EndGame }, except: null, everyone: true);
     }
+
+    /// <summary>
+    /// Runs a survivor game through its rounds (<c>Net_list::check_first_frag</c>): when one team is left the
+    /// survivors step aside, then everyone waits for the others, a new seed goes out and all restart together.
+    /// Returns whether the game may end now (anywhere in a game that is not survivor, at a round's end otherwise).
+    /// </summary>
+    private bool CheckRound()
+    {
+        if (!Rules.Survivor)
+            return true;
+        bool mayEnd = Rules.GameEnd == GameEnd.Time;
+        var players = State.Players.Values.ToList();
+
+        if (players.Count > 0 && players.All(p => p.Round == RoundState.WaitForWinner))
+        {
+            SyncTo(RoundState.WaitForRestart);
+            mayEnd = true;
+        }
+        if (players.Count > 0 && players.All(p => p.Round == RoundState.WaitForRestart))
+        {
+            if (SyncPoint == RoundState.WaitForRestart)
+            {
+                var seed = new ServerRandomPacket(NewSeed()) { Id = (byte)PacketType.ServerRandom };
+                State.Apply(seed);
+                Dispatch(seed, except: null);
+            }
+            SyncTo(RoundState.Playing);
+        }
+        if (players.Count == 0 || players.All(p => p.Round == RoundState.Playing))
+            SyncTo(RoundState.Last);
+
+        if (SyncPoint != RoundState.Last)
+            return mayEnd;
+
+        // A round is on. It is over when the players left alive are all of one team and others are waiting to play.
+        if (players.Where(p => p.Alive).Select(p => p.Team).Distinct().Count() > 1)
+        {
+            _validFrag = true;
+        }
+        else if (_validFrag)
+        {
+            var survivors = players.Where(p => p.Alive).Select(p => p.Team).Distinct().ToList();
+            Say(survivors.Count == 0 ? "Nobody wins the round" : $"Team {survivors[0] + 1} wins the round");
+            SyncTo(RoundState.WaitForWinner);
+            Rounds++;
+            _validFrag = false;
+        }
+        return mayEnd;
+    }
+
+    private void SyncTo(RoundState point)
+    {
+        if (SyncPoint == point)
+            return;
+        SyncPoint = point;
+        Dispatch(new StatePacket((byte)point) { Id = (byte)PacketType.ServerState, Slot = 255 }, except: null);
+    }
+
+    private void Say(string text) =>
+        Dispatch(new ChatPacket(-1, -1, text) { Id = (byte)PacketType.Chat }, except: null);
 
     public void Receive(HostPeer peer, Packet packet)
     {

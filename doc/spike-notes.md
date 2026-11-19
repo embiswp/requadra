@@ -517,11 +517,27 @@ Not run: a final two-window smoke test of the animation, because the desktop cli
 the session at that point (a plain single-player smoke run hung the same way), so only the unit tests cover this
 last round; the animation itself is the single-player code, which was checked on screen earlier.
 
+### Survivor rounds (twelfth step)
+
+- **Host** (`GameHost.CheckRound`, a port of `Net_list::check_first_frag` for net version 20): it tracks where
+  each player is (`RoundState`: playing, waiting for the winner, waiting for the restart) and a sync point it sends
+  as `ServerState`. A round is competitive while two teams have players alive; when only one is left the host says
+  who won (as chat text), moves the sync point to "wait for winner", and when everybody is waiting it sends a new
+  seed (`ServerRandom`) and the sync point "playing"; when all are playing again the sync point returns to
+  "last". With one team in the game nothing happens. In a survivor game the end condition is checked only when a
+  round ends (a timed game at any time).
+- **Client** (`NetworkGame`): the player picks up sync points every five frames, one at a time, as the original
+  does. The players left alive when the round ends send `FirstFrag` and step aside; the dead wait; each confirms
+  with a `ClientState` and restarts, on the host's word, with a fresh board and the new seed. No key press
+  restarts a player in a survivor game. The window shows "Waiting for the next round". `--survivor` on
+  `Quadra.Host` and on the hosting window turns it on. Tested in `SurvivorRoundTests` (in-process, host and two players).
+- **Not done:** the winner's board fill ("first frag" animation), round wins in the stats, a player who leaves
+  mid-round is simply dropped (the original keeps them as gone), idle players, and a late joiner.
+
 ## Suggested next steps
 
 1. Play the client and tune the feel: sound balance, speed per level, key timing, menu use.
-2. Round management on the host: survivor rounds (first frag, waiting for the winner, restart,
-   `ServerState`), rejoining, lag and idle limits, admin commands; a menu for the game's rules (end condition,
+2. More round management on the host: rejoining, lag and idle limits, admin commands; a menu for the game's rules (end condition,
    survivor, combo minimum); timing the garbage like the original (attacks when the attacker's clear animation ends).
 3. Try the host and client against the C++ game to see whether they talk to each other.
 4. Late join (`Download`) and the rest of the list under "not done".

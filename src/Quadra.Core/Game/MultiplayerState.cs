@@ -3,6 +3,16 @@ using Quadra.Core.Rules;
 
 namespace Quadra.Core.Game;
 
+/// <summary>Where a player is in a survivor round (<c>Canvas::State</c>); the host moves everyone through these in step.</summary>
+public enum RoundState : byte
+{
+    Playing,
+    WaitForWinner,
+    WaitForRestart,
+    /// <summary>No round change is going on (also the host's sync point while a round runs).</summary>
+    Last,
+}
+
 /// <summary>A player of a network game as every machine in it sees them.</summary>
 public sealed class RemotePlayer(byte slot, string name, byte team, int handicap, PlayerSim sim, uint playerId = 0, byte[]? playerHash = null)
 {
@@ -18,6 +28,11 @@ public sealed class RemotePlayer(byte slot, string name, byte team, int handicap
     public int Handicap { get; } = handicap;
     public PlayerSim Sim { get; } = sim;
     public int Frags { get; internal set; }
+
+    /// <summary>False from a death (or the winner's first frag) until the respawn.</summary>
+    public bool Alive { get; internal set; } = true;
+
+    public RoundState Round { get; internal set; }
 }
 
 /// <summary>
@@ -65,6 +80,19 @@ public sealed class MultiplayerState(GameServerPacket rules)
                 break;
             case RespawnPacket r when _players.TryGetValue(r.Slot, out var p):
                 p.Sim.Restart();
+                p.Alive = true;
+                p.Round = RoundState.Playing;
+                break;
+            case FirstFragPacket f when _players.TryGetValue(f.Slot, out var p):
+                p.Alive = false;       // a survivor of the round steps aside for the next one; not a death
+                p.Round = RoundState.WaitForWinner;
+                break;
+            case StatePacket s when s.Id == (byte)PacketType.State && _players.TryGetValue(s.Slot, out var p) && s.State <= (byte)RoundState.Last:
+                p.Round = (RoundState)s.State;
+                break;
+            case ServerRandomPacket random:
+                foreach (var player in _players.Values)
+                    player.Sim.Reseed(unchecked((int)random.Seed));
                 break;
             case LinesPacket l when l.Sender != PlayerSim.NoAttacker && _players.ContainsKey(l.Sender)
                                     && _players.TryGetValue(l.Slot, out var p):
@@ -72,6 +100,8 @@ public sealed class MultiplayerState(GameServerPacket rules)
                     p.Sim.ReceiveLines(l.Sender, l.Nb, l.Nc, l.Lx);
                 break;
             case DeadPacket d when _players.TryGetValue(d.Slot, out var p):
+                p.Alive = false;
+                p.Round = RoundState.WaitForWinner;
                 int fragger = p.Sim.Die();
                 if (fragger != PlayerSim.NoAttacker && _players.TryGetValue((byte)fragger, out var killer))
                     killer.Frags++;

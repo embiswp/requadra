@@ -11,6 +11,9 @@ public sealed class LegacyRandom
 
     public int Seed { get; private set; }
 
+    /// <summary>Starts the sequence over from <paramref name="seed"/> (a new survivor round).</summary>
+    public void SetSeed(int seed) => Seed = seed;
+
     /// <summary>Next 16-bit value.</summary>
     public ushort Next()
     {

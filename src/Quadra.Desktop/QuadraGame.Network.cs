@@ -46,7 +46,7 @@ public sealed partial class QuadraGame
             var gameHost = new GameHost(new HostRules
             {
                 Name = $"{_settings.CurrentPlayer.Name}'s game", Seed = Environment.TickCount,
-                GameEnd = _options.GameEnd, GameEndValue = _options.GameEndValue,
+                GameEnd = _options.GameEnd, GameEndValue = _options.GameEndValue, Survivor = _options.Survivor,
             });
             try
             {
@@ -315,7 +315,9 @@ public sealed partial class QuadraGame
             else if (game.Ended)
                 (first, second) = ("Game over", game.Result());
             else if (game.IsDead)
-                (first, second) = ("You are dead", game.DeadFrames > NetworkGame.RespawnLockFrames ? "Press a key to return" : null);
+                (first, second) = game.Survivor
+                    ? ("Waiting for the next round", null)
+                    : ("You are dead", game.DeadFrames > NetworkGame.RespawnLockFrames ? "Press a key to return" : null);
             if (first is not null)
                 _view.PaintMessage(first, second, low: !game.Started);
         }

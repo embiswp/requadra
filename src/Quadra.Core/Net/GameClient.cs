@@ -40,6 +40,21 @@ public sealed class GameClient
     /// <summary>The host has ended the game: its end condition was met.</summary>
     public bool Terminated { get; private set; }
 
+    private readonly Queue<RoundState> _syncPoints = new();
+
+    /// <summary>The round change the player acts on (survivor games); moved on by <see cref="NextSyncPoint"/>.</summary>
+    public RoundState SyncPoint { get; private set; } = RoundState.Last;
+
+    /// <summary>
+    /// Takes the next sync point the host sent, if any. The game loop asks every few frames, as the original does,
+    /// so that a point that the host moves past quickly is still seen.
+    /// </summary>
+    public void NextSyncPoint()
+    {
+        if (_syncPoints.TryDequeue(out var point))
+            SyncPoint = point;
+    }
+
     /// <summary>Raised for every packet after it has been applied.</summary>
     public event Action<Packet>? Received;
 
@@ -126,6 +141,10 @@ public sealed class GameClient
                     Paused = !Paused;
                 break;
 
+            case StatePacket { Id: (byte)PacketType.ServerState } s when s.State <= (byte)RoundState.Last:
+                _syncPoints.Enqueue((RoundState)s.State);
+                break;
+
             case EndGamePacket:
                 Terminated = true;
                 break;
@@ -179,6 +198,8 @@ public sealed class GameClient
         PacketType.ClientDead => PacketType.Dead,
         PacketType.ClientRespawn => PacketType.Respawn,
         PacketType.ClientLines => PacketType.Lines,
+        PacketType.ClientFirstFrag => PacketType.FirstFrag,
+        PacketType.ClientState => PacketType.State,
         _ => client,
     };
 
@@ -195,6 +216,14 @@ public sealed class GameClient
 
     public void Respawn(byte slot) =>
         Do(new RespawnPacket { Id = (byte)PacketType.ClientRespawn, Slot = slot });
+
+    /// <summary>The local player won the round and steps aside for the next one (survivor games).</summary>
+    public void FirstFrag(byte slot) =>
+        Do(new FirstFragPacket { Id = (byte)PacketType.ClientFirstFrag, Slot = slot });
+
+    /// <summary>Tells the host where the local player is in the round change.</summary>
+    public void SendState(byte slot, RoundState state) =>
+        Do(new StatePacket((byte)state) { Id = (byte)PacketType.ClientState, Slot = slot });
 
     public void Chat(string text, int team = -1, int toTeam = -1) =>
         _send(new ChatPacket((sbyte)team, (sbyte)toTeam, text) { Id = (byte)PacketType.ClientChat });

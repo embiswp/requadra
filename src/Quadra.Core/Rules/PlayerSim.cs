@@ -154,6 +154,9 @@ public sealed class PlayerSim
         _input?.BeginPiece();
     }
 
+    /// <summary>Starts the piece sequence over from a seed the host sent for a new round; the next <see cref="Restart"/> draws from it.</summary>
+    public void Reseed(int seed) => _random.SetSeed(seed);
+
     /// <summary>The key-to-action layer, if <see cref="AttachInput"/> was called.</summary>
     public PieceController? Input => _input;
 
