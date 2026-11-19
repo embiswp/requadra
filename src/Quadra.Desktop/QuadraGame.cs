@@ -145,14 +145,14 @@ public sealed partial class QuadraGame : Game
         if (WasPressed(keyboard, Keys.F11))
             ToggleFullscreen();
 
-        if (_networkActive)
+        if (NetworkActive)
             UpdateNetwork(keyboard, gameTime);
         else if (_flow.Current == Screen.Playing)
             UpdatePlaying(keyboard, gameTime);
         else
             UpdateMenu(keyboard, mouse);
 
-        if (_flow.Current == Screen.Lobby && !_networkActive)
+        if (_flow.Current == Screen.Lobby && !NetworkActive)
             UpdateLobby();
         if (_flow.QuitRequested)
             Exit();
@@ -287,7 +287,7 @@ public sealed partial class QuadraGame : Game
 
     private void OnTextInput(object? sender, TextInputEventArgs e)
     {
-        if (_networkActive)
+        if (NetworkActive)
             TypeChat(e.Character);
         if (_flow is { Current: Screen.Lobby })
             _flow.Lobby.TypeCharacter(e.Character);
@@ -410,7 +410,7 @@ public sealed partial class QuadraGame : Game
         // Paint the 640 x 480 picture, then scale it to the window keeping its proportions.
         GraphicsDevice.SetRenderTarget(_screen);
         _batch.Begin(samplerState: SamplerState.PointClamp);
-        if (_networkActive)
+        if (NetworkActive)
             DrawNetwork();
         else if (_flow.Current == Screen.Playing && _game is not null)
             DrawGame(_game);

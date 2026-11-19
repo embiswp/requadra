@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-using System.Text;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Input;
 using Quadra.Core.Assets;
@@ -18,17 +16,12 @@ namespace Quadra.Desktop;
 /// </summary>
 public sealed partial class QuadraGame
 {
-    private enum NetworkStage { Connecting, Joining, Waiting, Playing, Failed }
-
     private HostingSession? _hosting;
-    private TcpGameLink? _network;
-    private Task<TcpGameLink>? _connecting;
-    private NetworkGame? _netGame;
-    private NetworkStage _stage;
-    private bool _networkActive;
+    private ClientSession? _session;
     private string? _chatText;       // the line being typed, or null
-    private string _networkMessage = "";
     private int _networkLevel;
+
+    private bool NetworkActive => _session is not null;
 
     private bool _fromMenu;
     private Task<IReadOnlyList<ListedGame>>? _listing;
@@ -63,13 +56,9 @@ public sealed partial class QuadraGame
             host = "127.0.0.1";
         }
 
-        _networkActive = true;
-        _netGame = null;
         _unplayedMs = 0;
         _controls.Reset(_settings.CurrentPlayer);
-        _stage = NetworkStage.Connecting;
-        _networkMessage = $"Connecting to {host}:{port}...";
-        _connecting = Task.Run(() => TcpGameLink.ConnectAsync(host, port));
+        _session = new ClientSession(host, port, _settings.CurrentPlayer, _options.PlayerName, CreateNetworkGame);
         ShowLevel(1);
     }
 
@@ -113,15 +102,20 @@ public sealed partial class QuadraGame
 
     private void StopNetwork()
     {
-        _netGame = null;
-        if (_network is { } link)
-        {
-            link.Client.Leave();
-            link.DisposeAsync().AsTask().Wait(1000);
-        }
-        _network = null;
+        _session?.Stop();
+        _session = null;
         _hosting?.Stop();
         _hosting = null;
+    }
+
+    /// <summary>The host has given the local player a place: make the game they play.</summary>
+    private NetworkGame CreateNetworkGame(GameClient client, byte slot)
+    {
+        var settings = _settings.CurrentPlayer;
+        _view.ShowShadow = settings.Shadow;
+        _view.SmoothMovement = settings.Smooth;
+        _networkLevel = 0;
+        return new NetworkGame(client, slot, _controls.State, _controls.Reset(settings), settings.HorizontalSpeed, settings.ContinuousDown);
     }
 
     private void UpdateNetwork(KeyboardState keyboard, GameTime gameTime)
@@ -132,101 +126,23 @@ public sealed partial class QuadraGame
         }
         else if (WasPressed(keyboard, Keys.Escape))
         {
+            bool fromMenu = _fromMenu;
             StopNetwork();
-            _networkActive = false;
-            if (_fromMenu)
+            if (fromMenu)
                 _flow.ReturnToLobby();
             else
                 Exit();
             return;
         }
 
-        switch (_stage)
-        {
-            case NetworkStage.Connecting:
-                if (_connecting!.IsFaulted)
-                {
-                    _networkMessage = "Could not connect: " + _connecting.Exception!.GetBaseException().Message;
-                    _stage = NetworkStage.Failed;
-                }
-                else if (_connecting.IsCompletedSuccessfully)
-                {
-                    _network = _connecting.Result;
-                    _network.Client.RequestJoin();
-                    _stage = NetworkStage.Joining;
-                    _networkMessage = "Joining...";
-                }
-                break;
-
-            case NetworkStage.Joining:
-                _network!.Client.Pump();
-                if (_network.Client.State is not null)
-                    RequestLocalPlayer();
-                else if (_network.Closed.IsCompleted)
-                    Fail("The host closed the connection.");
-                break;
-
-            case NetworkStage.Waiting or NetworkStage.Playing:
-                UpdateNetworkGame(keyboard, gameTime);
-                break;
-        }
+        var session = _session!;
+        session.Update();
+        if (session.Game is { } game && session.Stage is SessionStage.Waiting or SessionStage.Playing)
+            PlayNetworkGame(game, session, keyboard, gameTime);
     }
 
-    private void RequestLocalPlayer()
+    private void PlayNetworkGame(NetworkGame game, ClientSession session, KeyboardState keyboard, GameTime gameTime)
     {
-        var client = _network!.Client;
-        var settings = _settings.CurrentPlayer;
-        string name = _options.PlayerName ?? (settings.Name.Length == 0 ? "Player" : settings.Name);
-        var used = client.State!.Players.Values.Select(p => (int)p.Team).ToHashSet();
-        byte team = settings.Team >= 0
-            ? (byte)settings.Team
-            : (byte)Enumerable.Range(0, PacketDecoder.MaxTeams).FirstOrDefault(t => !used.Contains(t));
-
-        client.PlayerAnswered += OnPlayerAnswered;
-        client.RequestPlayer(new PlayerWantJoinPacket
-        {
-            Name = name, Team = team, Handicap = settings.Handicap, Smooth = settings.Smooth ? 1 : 0, Shadow = settings.Shadow ? 1 : 0,
-            HRepeat = settings.HorizontalSpeed, VRepeat = settings.VerticalSpeed,
-            PlayerHash = MD5.HashData(Encoding.UTF8.GetBytes(name + Environment.MachineName)),
-        });
-        _stage = NetworkStage.Waiting;
-        _networkMessage = "Waiting for the host's answer...";
-    }
-
-    private void OnPlayerAnswered(PlayerAcceptedPacket answer)
-    {
-        var client = _network!.Client;
-        client.PlayerAnswered -= OnPlayerAnswered;
-        if (answer.Accepted != JoinAnswer.Accepted)
-        {
-            Fail($"The game did not take the player: {answer.Accepted}.");
-            return;
-        }
-
-        // Pump has applied the answer already, so the local player is in the replicated state.
-        var settings = _settings.CurrentPlayer;
-        _netGame = new NetworkGame(client, answer.Pos, _controls.State, _controls.Reset(settings), settings.HorizontalSpeed, settings.ContinuousDown);
-        _view.ShowShadow = settings.Shadow;
-        _view.SmoothMovement = settings.Smooth;
-        _networkLevel = 0;
-    }
-
-    private void Fail(string message)
-    {
-        _networkMessage = message;
-        _stage = NetworkStage.Failed;
-    }
-
-    private void UpdateNetworkGame(KeyboardState keyboard, GameTime gameTime)
-    {
-        var client = _network!.Client;
-        if (_netGame is null)
-        {
-            client.Pump();      // the answer to the join request is applied here
-            return;
-        }
-        var game = _netGame;
-
         bool chatting = _chatText is not null;
         if (chatting)
         {
@@ -245,7 +161,7 @@ public sealed partial class QuadraGame
         }
         else if (!game.Started && game.Countdown == GameHost.WaitingForStart && WasPressed(keyboard, Keys.Enter))
         {
-            client.RequestPause();
+            session.Client!.RequestPause();
         }
 
         if (!chatting)
@@ -259,19 +175,17 @@ public sealed partial class QuadraGame
             _sounds.PlayEvents(game.Events, game.Player.Level);
         }
 
-        _stage = game.Started ? NetworkStage.Playing : NetworkStage.Waiting;
+        session.GameMoved();
         if (game.Player.Level != _networkLevel && game.Animation is null)
         {
             _networkLevel = game.Player.Level;
             ShowLevel(_networkLevel);
         }
-        if (_network.Closed.IsCompleted)
-            Fail("The connection to the host ended.");
     }
 
     private void DrawNetwork()
     {
-        if (_netGame is { } game)
+        if (_session is { Game: { } game, Stage: not SessionStage.Failed })
         {
             _view.Paint(game);
             _view.PaintRoom(game, _chatText);
@@ -292,7 +206,7 @@ public sealed partial class QuadraGame
         else
         {
             _view.Overlay.Clear();
-            _view.PaintMessage(_networkMessage);
+            _view.PaintMessage(_session!.Message);
         }
         _overlay.SetData(_view.Overlay.Pixels);
         _batch.Draw(_background.Picture, Vector2.Zero, Color.White);
