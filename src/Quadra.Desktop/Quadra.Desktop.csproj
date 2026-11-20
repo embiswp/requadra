@@ -20,6 +20,11 @@
     <Content Include="..\..\legacy\textes\anglais.txt;..\..\legacy\textes\francais.txt" Link="Assets\textes\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <!-- The game itself is shared with the Android head as source: the two MonoGame packages are separate assemblies. -->
+  <ItemGroup>
+    <Compile Include="..\Quadra.Client.Shared\**\*.cs" LinkBase="Shared" />
+  </ItemGroup>
+
   <ItemGroup>
     <InternalsVisibleTo Include="Quadra.Tests" />
   </ItemGroup>

@@ -15,6 +15,11 @@
     <AndroidPackageFormat>apk</AndroidPackageFormat>
   </PropertyGroup>
 
+  <!-- The game itself is shared with the desktop head as source: the two MonoGame packages are separate assemblies. -->
+  <ItemGroup>
+    <Compile Include="..\Quadra.Client.Shared\**\*.cs" LinkBase="Shared" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="MonoGame.Framework.Android" Version="3.8.*" />
     <ProjectReference Include="..\Quadra.Core\Quadra.Core.csproj" />

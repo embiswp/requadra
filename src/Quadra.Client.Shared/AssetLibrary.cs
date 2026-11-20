@@ -3,7 +3,7 @@ using Microsoft.Xna.Framework.Graphics;
 using Quadra.Core.Assets;
 using Quadra.Core.Rendering;
 
-namespace Quadra.Desktop;
+namespace Quadra.Client;
 
 /// <summary>A level's background picture together with its palette (which holds the block colours).</summary>
 internal sealed record Background(Texture2D Picture, Rgb[] Palette);

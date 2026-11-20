@@ -2,7 +2,7 @@ using Microsoft.Xna.Framework.Input;
 using Quadra.Core.Game;
 using Quadra.Core.Net;
 using Quadra.Core.Settings;
-using Quadra.Desktop;
+using Quadra.Client;
 
 namespace Quadra.Tests;
 

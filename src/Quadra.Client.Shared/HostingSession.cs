@@ -3,7 +3,7 @@ using System.Net.Sockets;
 using Quadra.Core.Net;
 using Quadra.Core.Qserv;
 
-namespace Quadra.Desktop;
+namespace Quadra.Client;
 
 /// <summary>Everything that makes a game this window hosts reachable: the TCP server, the answers to LAN searches and the list server announcement.</summary>
 internal sealed class HostingSession

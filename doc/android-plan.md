@@ -18,6 +18,9 @@ shell around it.
 - Share the source by linking the files into both heads, because MonoGame's DesktopGL and Android packages
   are separate assemblies.
 - **Done when:** the desktop build and tests are unchanged and an empty Android head builds.
+- **Status: done.** The shared code is in `src/Quadra.Client.Shared` and both heads compile it. Typed
+  characters now come in through `QuadraGame.TypeCharacter`, because Android has no `Window.TextInput`.
+  The Android head compiles the game but does not start it yet: it reads its art from files, which is Phase 2.
 - **Needs:** the .NET Android workload (`dotnet workload install android`), a JDK and the Android SDK.
   None of these are installed on the development machine yet.
 

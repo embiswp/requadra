@@ -1,7 +1,7 @@
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Input;
 
-namespace Quadra.Desktop;
+namespace Quadra.Client;
 
 /// <summary>
 /// Input from a script instead of a person, for checking the program end to end. A script is steps separated

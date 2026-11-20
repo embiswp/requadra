@@ -10,7 +10,9 @@ game is kept untouched in [`legacy/`](legacy/).
 | Path | What |
 |---|---|
 | `src/Quadra.Core` | Game rules, input layer, demos, the network protocol, game host and client, game list client. No graphics or platform code. |
-| `src/Quadra.Desktop` | MonoGame (DesktopGL) client for Windows, macOS and Linux. Uses the original art, fonts and sounds from `legacy/`. |
+| `src/Quadra.Client.Shared` | The game window and everything around it (menus, input, drawing, sound, network play), as source files that both client heads compile in. Not a project of its own. |
+| `src/Quadra.Desktop` | MonoGame (DesktopGL) client for Windows, macOS and Linux: the entry point plus the shared source. Uses the original art, fonts and sounds from `legacy/`. |
+| `src/Quadra.Android` | The Android client (work in progress, not in the solution): builds with the Android dev container. It compiles the shared source but does not start the game yet. |
 | `src/Quadra.Server` | The game list server (ASP.NET Core), replacing the old Perl `qserv.pl`. |
 | `src/Quadra.Host` | A game host without a player: takes connections and relays moves; can announce itself to a game list server. |
 | `src/Quadra.DemoInfo` | Command-line tool that replays the recorded demos and prints the results. |

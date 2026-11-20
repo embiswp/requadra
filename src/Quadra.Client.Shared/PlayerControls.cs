@@ -4,7 +4,7 @@ using Quadra.Core.Input;
 using Quadra.Core.Net;
 using Quadra.Core.Settings;
 
-namespace Quadra.Desktop;
+namespace Quadra.Client;
 
 /// <summary>The current player's keys: the bindings the game uses, and the key states it reads, fed from the keyboard.</summary>
 internal sealed class PlayerControls

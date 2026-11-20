@@ -62,7 +62,9 @@ public sealed class HostAnnouncer : IAsyncDisposable
             else
                 Failed = "The game list server did not accept the game.";
         }
-        catch (Exception e) when (e is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
+        // A refused connection can still arrive as an HttpRequestException after the stop was requested; only a
+        // cancellation caused by the stop must pass through to RunAsync.
+        catch (Exception e) when (e is HttpRequestException || (e is TaskCanceledException && !ct.IsCancellationRequested))
         {
             Failed = e.Message;
         }

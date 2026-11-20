@@ -1,7 +1,7 @@
 using Quadra.Core.Assets;
 using Quadra.Core.Game;
 
-namespace Quadra.Desktop;
+namespace Quadra.Client;
 
 /// <summary>Plays the sound cues for what happens in the menus and in a game.</summary>
 internal sealed class GameSounds(AssetLibrary assets, SoundCues cues)

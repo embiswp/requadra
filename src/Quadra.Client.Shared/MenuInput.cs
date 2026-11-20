@@ -2,7 +2,7 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Input;
 using Quadra.Core.Menus;
 
-namespace Quadra.Desktop;
+namespace Quadra.Client;
 
 /// <summary>Turns the mouse and keyboard into what the menu screens understand (<see cref="AppFlow"/>), with the sounds that go with it.</summary>
 internal sealed class MenuInput(AppFlow flow, GameSounds sounds)

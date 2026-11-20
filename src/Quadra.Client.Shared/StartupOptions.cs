@@ -1,4 +1,4 @@
-namespace Quadra.Desktop;
+namespace Quadra.Client;
 
 /// <summary>
 /// Command line options. Most exist to check a build without a person at the keyboard

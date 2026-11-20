@@ -1,4 +1,4 @@
-using Quadra.Desktop;
+using Quadra.Client;
 
 // quadra [--smoke [updates]] [--screenshot file.png] [--level n] [--pause] [--fade]
 //        [--screen main|setup|options|scores|play] [--focus item] [--lang 0|1] [--data-dir folder]
@@ -13,6 +13,7 @@ using Quadra.Desktop;
 //   --script feeds scripted mouse and keyboard input, one step per update, then exits.
 var options = StartupOptions.Parse(args);
 using var game = new QuadraGame(options);
+game.Window.TextInput += (_, e) => game.TypeCharacter(e.Character);
 game.Run();
 
 if (options.SmokeUpdates > 0 || options.Script is not null)

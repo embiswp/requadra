@@ -8,7 +8,7 @@ using Quadra.Core.Menus;
 using Quadra.Core.Rendering;
 using Quadra.Core.Settings;
 
-namespace Quadra.Desktop;
+namespace Quadra.Client;
 
 /// <summary>
 /// The window. It turns mouse, keyboard and text input into calls on <see cref="AppFlow"/> (the menu
@@ -77,7 +77,6 @@ public sealed partial class QuadraGame : Game
         IsFixedTimeStep = false;      // the game logic runs on its own 10 ms clock, see Update
         Window.AllowUserResizing = true;
         Window.Title = "Quadra";
-        Window.TextInput += OnTextInput;
     }
 
     /// <summary>What a smoke run reports when it finishes.</summary>
@@ -174,7 +173,7 @@ public sealed partial class QuadraGame : Game
     {
         if (_options.Script is null)
             return (Keyboard.GetState(), Mouse.GetState());
-        _script ??= new ScriptedInput(_options.Script, (x, y) => Fit.ToWindow(x, y), c => OnTextInput(this, new TextInputEventArgs(c)));
+        _script ??= new ScriptedInput(_options.Script, (x, y) => Fit.ToWindow(x, y), TypeCharacter);
         return _script.Next();
     }
 
@@ -197,14 +196,15 @@ public sealed partial class QuadraGame : Game
             _chatText += c;
     }
 
-    private void OnTextInput(object? sender, TextInputEventArgs e)
+    /// <summary>A character typed by the person: the head passes on what its platform delivers (a key, the soft keyboard).</summary>
+    public void TypeCharacter(char character)
     {
         if (NetworkActive)
-            TypeChat(e.Character);
+            TypeChat(character);
         if (_flow is { Current: Screen.Lobby })
-            _flow.Lobby.TypeCharacter(e.Character);
+            _flow.Lobby.TypeCharacter(character);
         if (_flow is { Current: Screen.Setup })
-            _flow.Setup.TypeCharacter(e.Character);
+            _flow.Setup.TypeCharacter(character);
     }
 
     private void StartGame()

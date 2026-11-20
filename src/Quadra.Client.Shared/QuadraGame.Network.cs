@@ -7,7 +7,7 @@ using Quadra.Core.Qserv;
 using Quadra.Core.Net;
 using Quadra.Core.Rendering;
 
-namespace Quadra.Desktop;
+namespace Quadra.Client;
 
 /// <summary>
 /// Playing over the network, started with <c>--host [port]</c> or <c>--join host[:port]</c>. There are no

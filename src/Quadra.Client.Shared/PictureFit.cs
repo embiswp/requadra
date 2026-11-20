@@ -1,7 +1,7 @@
 using Microsoft.Xna.Framework;
 using Quadra.Core.Rendering;
 
-namespace Quadra.Desktop;
+namespace Quadra.Client;
 
 /// <summary>How the original's 640 x 480 picture sits in the window: as large as fits, centred, in proportion.</summary>
 internal readonly record struct PictureFit(Rectangle Area)
