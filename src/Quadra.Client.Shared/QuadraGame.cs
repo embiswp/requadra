@@ -1,6 +1,7 @@
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
+using Microsoft.Xna.Framework.Input.Touch;
 using Quadra.Core.Assets;
 using Quadra.Core.Game;
 using Quadra.Core.Input;
@@ -68,11 +69,23 @@ public sealed partial class QuadraGame : Game
         if (options.Language is { } language)
             _settings.Language = Math.Clamp(language, 0, GameSettings.LanguageCount - 1);
 
-        _graphics = new GraphicsDeviceManager(this)
+        _graphics = new GraphicsDeviceManager(this);
+        if (OperatingSystem.IsAndroid())
         {
-            PreferredBackBufferWidth = SinglePlayerView.ScreenWidth * 3 / 2,
-            PreferredBackBufferHeight = SinglePlayerView.ScreenHeight * 3 / 2,
-        };
+            // Android has no resizable window: fill the real screen and letterbox the picture within it.
+            var display = GraphicsAdapter.DefaultAdapter.CurrentDisplayMode;
+            _graphics.IsFullScreen = true;
+            _graphics.PreferredBackBufferWidth = display.Width;
+            _graphics.PreferredBackBufferHeight = display.Height;
+            _fullscreen = true;
+            // There is no mouse on a phone: the menus are driven by Mouse.GetState, so feed it from touch.
+            TouchPanel.EnableMouseTouchPoint = true;
+        }
+        else
+        {
+            _graphics.PreferredBackBufferWidth = SinglePlayerView.ScreenWidth * 3 / 2;
+            _graphics.PreferredBackBufferHeight = SinglePlayerView.ScreenHeight * 3 / 2;
+        }
         IsMouseVisible = true;
         IsFixedTimeStep = false;      // the game logic runs on its own 10 ms clock, see Update
         Window.AllowUserResizing = true;
@@ -111,6 +124,8 @@ public sealed partial class QuadraGame : Game
         _pauseSign = _assets.ToTexture(_assets.PauseBanner);
         _pixel = new Texture2D(GraphicsDevice, 1, 1);
         _pixel.SetData([Color.White]);
+        if (OperatingSystem.IsAndroid())
+            LoadTouchControls();
 
         if (_options.Screen is { } name && Enum.TryParse<Screen>(name, ignoreCase: true, out var screen))
         {
@@ -145,6 +160,9 @@ public sealed partial class QuadraGame : Game
         if (WasPressed(keyboard, Keys.F11))
             ToggleFullscreen();
 
+        if (OperatingSystem.IsAndroid() && (NetworkActive || _flow.Current == Screen.Playing))
+            UpdateTouchControls();
+
         if (NetworkActive)
             UpdateNetwork(keyboard, gameTime);
         else if (_flow.Current == Screen.Playing)
@@ -172,9 +190,21 @@ public sealed partial class QuadraGame : Game
     private (KeyboardState Keyboard, MouseState Mouse) ReadInput()
     {
         if (_options.Script is null)
-            return (Keyboard.GetState(), Mouse.GetState());
+            return (Keyboard.GetState(), OperatingSystem.IsAndroid() ? TouchAsMouse() : Mouse.GetState());
         _script ??= new ScriptedInput(_options.Script, (x, y) => Fit.ToWindow(x, y), TypeCharacter);
         return _script.Next();
+    }
+
+    /// <summary>The menus are written against a mouse; a phone has none, so the first touch stands in for it.</summary>
+    private MouseState TouchAsMouse()
+    {
+        var touches = TouchPanel.GetState();
+        if (touches.Count == 0)
+            return new MouseState(_previousMouse.X, _previousMouse.Y, 0, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released);
+        var touch = touches[0];
+        bool down = touch.State is TouchLocationState.Pressed or TouchLocationState.Moved;
+        return new MouseState((int)touch.Position.X, (int)touch.Position.Y, 0,
+            down ? ButtonState.Pressed : ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released);
     }
 
     private void OnScreenChanged()
@@ -337,6 +367,8 @@ public sealed partial class QuadraGame : Game
         GraphicsDevice.Clear(Color.Black);
         _batch.Begin(samplerState: SamplerState.LinearClamp);
         _batch.Draw(_screen, Fit.Area, Color.White);
+        if (OperatingSystem.IsAndroid() && (NetworkActive || _flow.Current == Screen.Playing))
+            DrawTouchControls();
         _batch.End();
         base.Draw(gameTime);
     }

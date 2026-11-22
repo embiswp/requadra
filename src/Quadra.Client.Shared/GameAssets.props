@@ -1,0 +1,15 @@
+<Project>
+
+  <!-- The original art, sounds, fonts and texts, used straight from legacy/. Each head packages them under Assets/. -->
+  <PropertyGroup>
+    <LegacyDirectory>$(MSBuildThisFileDirectory)..\..\legacy\</LegacyDirectory>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <GameAsset Include="$(LegacyDirectory)images\fond?.png;$(LegacyDirectory)images\gamelvup.png;$(LegacyDirectory)images\gamepaus.png;$(LegacyDirectory)images\debut*.png;$(LegacyDirectory)images\setup*.png;$(LegacyDirectory)images\hscor*.png;$(LegacyDirectory)images\multi.png" Folder="images" />
+    <GameAsset Include="$(LegacyDirectory)sons\*.wav" Folder="sons" />
+    <GameAsset Include="$(LegacyDirectory)fonts\*.fnt" Folder="fonts" />
+    <GameAsset Include="$(LegacyDirectory)textes\anglais.txt;$(LegacyDirectory)textes\francais.txt" Folder="textes" />
+  </ItemGroup>
+
+</Project>

@@ -20,6 +20,11 @@
     <Compile Include="..\Quadra.Client.Shared\**\*.cs" LinkBase="Shared" />
   </ItemGroup>
 
+  <Import Project="..\Quadra.Client.Shared\GameAssets.props" />
+  <ItemGroup>
+    <AndroidAsset Include="@(GameAsset)" Link="Assets\%(Folder)\%(Filename)%(Extension)" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="MonoGame.Framework.Android" Version="3.8.*" />
     <ProjectReference Include="..\Quadra.Core\Quadra.Core.csproj" />

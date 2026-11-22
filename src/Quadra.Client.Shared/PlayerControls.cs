@@ -11,6 +11,7 @@ internal sealed class PlayerControls
 {
     private Keys[] _gameKeys = [];
     private PlayerSettings _player = new();
+    private readonly Dictionary<GameAction, bool> _touchDown = [];
 
     /// <summary>What the game reads; key presses and releases are reported to it by <see cref="Feed"/>.</summary>
     public KeyStates State { get; } = new();
@@ -21,6 +22,7 @@ internal sealed class PlayerControls
         _player = player;
         _gameKeys = Enum.GetValues<GameAction>().Select(KeyFor).Distinct().ToArray();
         State.ClearAll();   // the same object stays: games hold on to it
+        _touchDown.Clear();
         return new KeyBindings(
             (int)KeyFor(GameAction.Left), (int)KeyFor(GameAction.Right), (int)KeyFor(GameAction.RotateLeft),
             (int)KeyFor(GameAction.Down), (int)KeyFor(GameAction.RotateRight), (int)KeyFor(GameAction.RotateTwice),
@@ -61,5 +63,18 @@ internal sealed class PlayerControls
         int key = (int)KeyFor(action);
         State.Down(key);
         State.Up(key);
+    }
+
+    /// <summary>Holds or releases an action's bound key, for a touch button standing in for the keyboard.</summary>
+    public void SetAction(GameAction action, bool down)
+    {
+        if (_touchDown.GetValueOrDefault(action) == down)
+            return;
+        _touchDown[action] = down;
+        int key = (int)KeyFor(action);
+        if (down)
+            State.Down(key);
+        else
+            State.Up(key);
     }
 }

@@ -1,3 +1,4 @@
+using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Audio;
 using Microsoft.Xna.Framework.Graphics;
 using Quadra.Core.Assets;
@@ -9,13 +10,13 @@ namespace Quadra.Client;
 internal sealed record Background(Texture2D Picture, Rgb[] Palette);
 
 /// <summary>
-/// Loads the original art, sounds and fonts from the Assets folder next to the program. Backgrounds and
-/// sounds are loaded when first needed.
+/// Loads the original art, sounds and fonts from the Assets folder, through <see cref="TitleContainer"/>: that is
+/// the folder next to the program on a desktop and the packaged assets on Android. Backgrounds and sounds are
+/// loaded when first needed.
 /// </summary>
 internal sealed class AssetLibrary : IDisposable
 {
     private readonly GraphicsDevice _device;
-    private readonly string _root;
     private readonly Dictionary<int, Background> _backgrounds = [];
     private readonly Dictionary<string, Background> _pictures = [];
     private readonly Dictionary<string, PixelBuffer?> _sprites = [];
@@ -25,14 +26,38 @@ internal sealed class AssetLibrary : IDisposable
     private readonly Dictionary<string, int> _sampleRates = [];
     private bool _audioFailed;
 
-    public AssetLibrary(GraphicsDevice device, string? root = null)
+    public AssetLibrary(GraphicsDevice device)
     {
         _device = device;
-        _root = root ?? Path.Combine(AppContext.BaseDirectory, "Assets");
-        TextFont = new LegacyFont(File.ReadAllBytes(Path.Combine(_root, "fonts", "font.fnt")), 2);
-        NumberFont = new LegacyFont(File.ReadAllBytes(Path.Combine(_root, "fonts", "courrier.fnt")), 1);
+        TextFont = new LegacyFont(Read("fonts/font.fnt"), 2);
+        NumberFont = new LegacyFont(Read("fonts/courrier.fnt"), 1);
         LevelUpBanner = LoadSprite("gamelvup.png");
         PauseBanner = LoadSprite("gamepaus.png");
+    }
+
+    // Desktop copies content next to the executable under Assets/; Android's AndroidAsset packaging
+    // strips that leading folder name, so assets there sit directly under the package's asset root.
+    private static readonly string AssetFolder = OperatingSystem.IsAndroid() ? "" : "Assets/";
+
+    private static byte[] Read(string file)
+    {
+        using var stream = TitleContainer.OpenStream(AssetFolder + file);
+        using var bytes = new MemoryStream();
+        stream.CopyTo(bytes);
+        return bytes.ToArray();
+    }
+
+    private static bool Exists(string file)
+    {
+        try
+        {
+            using var stream = TitleContainer.OpenStream(AssetFolder + file);
+            return true;
+        }
+        catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException)
+        {
+            return false;
+        }
     }
 
     public LegacyFont TextFont { get; }
@@ -44,21 +69,21 @@ internal sealed class AssetLibrary : IDisposable
         if (!_texts.TryGetValue(language, out var text))
         {
             string file = language == 1 ? "francais.txt" : "anglais.txt";
-            text = new LegacyText(File.ReadAllBytes(Path.Combine(_root, "textes", file)));
+            text = new LegacyText(Read("textes/" + file));
             _texts[language] = text;
         }
         return text;
     }
 
     /// <summary>Size of a picture in the images folder, read from its header.</summary>
-    public (int Width, int Height) ImageSize(string file) => PngInfo.Size(File.ReadAllBytes(Path.Combine(_root, "images", file)));
+    public (int Width, int Height) ImageSize(string file) => PngInfo.Size(Read("images/" + file));
 
     /// <summary>A full-screen picture (menu background) with its palette; cached.</summary>
     public Background Picture(string file)
     {
         if (!_pictures.TryGetValue(file, out var picture))
         {
-            byte[] bytes = File.ReadAllBytes(Path.Combine(_root, "images", file));
+            byte[] bytes = Read("images/" + file);
             using var stream = new MemoryStream(bytes);
             picture = new Background(Texture2D.FromStream(_device, stream), PngPalette.Read(bytes));
             _pictures[file] = picture;
@@ -71,8 +96,7 @@ internal sealed class AssetLibrary : IDisposable
     {
         if (!_sprites.TryGetValue(file, out var sprite))
         {
-            string path = Path.Combine(_root, "images", file);
-            sprite = File.Exists(path) ? LoadSprite(file) : null;
+            sprite = Exists("images/" + file) ? LoadSprite(file) : null;
             _sprites[file] = sprite;
         }
         return sprite;
@@ -102,8 +126,7 @@ internal sealed class AssetLibrary : IDisposable
         int index = ((level - 1) % 10 + 10) % 10;
         if (!_backgrounds.TryGetValue(index, out var background))
         {
-            string path = Path.Combine(_root, "images", $"fond{index}.png");
-            byte[] bytes = File.ReadAllBytes(path);
+            byte[] bytes = Read($"images/fond{index}.png");
             using var stream = new MemoryStream(bytes);
             background = new Background(Texture2D.FromStream(_device, stream), PngPalette.Read(bytes));
             _backgrounds[index] = background;
@@ -116,7 +139,7 @@ internal sealed class AssetLibrary : IDisposable
     {
         if (!_sampleRates.TryGetValue(file, out int rate))
         {
-            rate = WavInfo.SampleRate(File.ReadAllBytes(Path.Combine(_root, "sons", file)));
+            rate = WavInfo.SampleRate(Read("sons/" + file));
             _sampleRates[file] = rate;
         }
         return rate;
@@ -131,7 +154,7 @@ internal sealed class AssetLibrary : IDisposable
         {
             if (!_sounds.TryGetValue(cue.File, out var effect))
             {
-                using var stream = File.OpenRead(Path.Combine(_root, "sons", cue.File));
+                using var stream = TitleContainer.OpenStream(AssetFolder + "sons/" + cue.File);
                 effect = SoundEffect.FromStream(stream);
                 _sounds[cue.File] = effect;
             }
@@ -154,7 +177,7 @@ internal sealed class AssetLibrary : IDisposable
 
     private PixelBuffer LoadSprite(string name)
     {
-        byte[] bytes = File.ReadAllBytes(Path.Combine(_root, "images", name));
+        byte[] bytes = Read("images/" + name);
         using var stream = new MemoryStream(bytes);
         using var texture = Texture2D.FromStream(_device, stream);
         var rgba = new byte[texture.Width * texture.Height * 4];

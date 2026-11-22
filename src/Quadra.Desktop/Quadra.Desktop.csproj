@@ -11,13 +11,9 @@
     <RootNamespace>Quadra.Desktop</RootNamespace>
   </PropertyGroup>
 
-  <!-- The original art, sounds and fonts are used straight from legacy/ and copied next to the program. -->
+  <Import Project="..\Quadra.Client.Shared\GameAssets.props" />
   <ItemGroup>
-    <Content Include="..\..\legacy\images\fond?.png;..\..\legacy\images\gamelvup.png;..\..\legacy\images\gamepaus.png;..\..\legacy\images\debut*.png;..\..\legacy\images\setup*.png;..\..\legacy\images\hscor*.png;..\..\legacy\images\multi.png"
-             Link="Assets\images\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="..\..\legacy\sons\*.wav" Link="Assets\sons\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="..\..\legacy\fonts\*.fnt" Link="Assets\fonts\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="..\..\legacy\textes\anglais.txt;..\..\legacy\textes\francais.txt" Link="Assets\textes\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="@(GameAsset)" Link="Assets\%(Folder)\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <!-- The game itself is shared with the Android head as source: the two MonoGame packages are separate assemblies. -->
